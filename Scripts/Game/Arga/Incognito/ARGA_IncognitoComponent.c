@@ -1592,8 +1592,9 @@ class ARGA_IncognitoComponent : ScriptComponent
 			EnterOwnCombat(state, "engaged by outfit enemy");
 
 		// A player trading fire with a common enemy runs like everyone else.
+		bool ownCombat = IsInOwnCombat(state);
 		float sprintRadius;
-		if (sprinting && !IsInOwnCombat(state))
+		if (sprinting && !ownCombat)
 			sprintRadius = m_fSprintRadius;
 
 		float voiceRadius;
@@ -1660,7 +1661,8 @@ class ARGA_IncognitoComponent : ScriptComponent
 				}
 			}
 
-			if (m_fProximityRadius > 0 && distance <= m_fProximityRadius)
+			// Allies stand close in a firefight; only a calm observer finds it odd.
+			if (m_fProximityRadius > 0 && distance <= m_fProximityRadius && !ownCombat && !IsInCombat(aiEntity))
 			{
 				gain = ScaledGain(m_fProximitySuspicionRate, distance, m_fProximityRadius);
 				proximityGain = Math.Max(proximityGain, gain);

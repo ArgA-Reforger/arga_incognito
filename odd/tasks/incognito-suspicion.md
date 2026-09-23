@@ -220,6 +220,12 @@ Strategy: ask-on-risk. Branch `feat/incognito-component`.
   shooting the outfit's own side is unaffected. Being engaged is read from the enemy's perception,
   not from actual shots or damage.
 
+- Run B with own combat (same log, from 14:34): `Own combat cause=shot at outfit enemy` at 14:34:32;
+  every later shot at FIA added nothing, including untargeted ones (one FIA at 27 m sat ~8 deg off the
+  aim line, outside the 5 deg cone). The break came at 14:36:44 by `suspicion:proximity` from a USSR
+  at 9.8 m with `threat=3` (THREATENED) who had closed in to fight FIA. Fix: the proximity rule gets
+  the same combat exemption as sprinting (own combat, or the observer at VIGILANT or above).
+
 ## Next step
 Repeat run B.
 Delivery (push / PR) is the user's decision.
