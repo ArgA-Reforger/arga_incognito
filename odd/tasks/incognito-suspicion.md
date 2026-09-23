@@ -39,7 +39,7 @@ is never wired to any entity, rebuilt on top of our server-authoritative, dedica
 ## Tasks
 - [x] T0 - Copy `ARGA_DisguiseComponent` and its VON bridge into this addon as
       `ARGA_IncognitoComponent`, with no behaviour change. Rename classes and log tag only.
-- [ ] T0b - Prefab / world entity that hosts the component, and a dedicated-server re-run of the
+- [x] T0b - Prefab / world entity that hosts the component, and a dedicated-server re-run of the
       12/09 checks (sprint, aim, proximity, voice).
 - [ ] T1 - Suspicion meter: instant-break vs accumulating rules, decay, recovery threshold.
 - [ ] T2 - Reinforcements: spawn at distance and bearing, move to break point.
@@ -59,5 +59,22 @@ Strategy: ask-on-risk. Branch `feat/incognito-component`.
   did not respond. Review assess: medium, review due; native review blocked at the untracked-files
   selection step (`addon.gproj` is untracked), so the commit is unreviewed.
 
+- T0b (in progress): test world `Worlds/TestIncognito.ent` (Arland). Run 11:09 log: `Armed on server`,
+  `Watching playerId=1`, `Initialized ... perceived=ARGA disguise=DEFAULT_FACTION` (no disguise yet).
+  Found: GameMode_ARGA leaves `m_bPerceivedFactionChangesAffectsAI` at vanilla default 0
+  (`SCR_PerceivedFactionManagerComponent.c:20`), so AI would ignore disguises; overridden in the
+  test layer to 1 + `HIGHEST_VALUE`, as A La Deriva does. Test player: prefab
+  `Prefabs/Characters/Incognito/ARGA_Incognito_Character_USSR_Rifleman.et` (vanilla USSR rifleman,
+  faction ARGA) as the only loadout; enemy: `Group_USSR_LightFireTeam` in `C_EnemyFaction.layer`.
+  Missions using this addon must enable that perceived-faction flag themselves.
+
+- T0b closed (Workbench play, log `logs_2026-09-23_10-58-20`, run from 11:28): `perceived=USSR
+  disguise=HOSTILE_FACTION`, `AI override applied: AI now perceives USSR`; breaks observed for
+  sprinting (22 m), proximity (6.3 m and 9.6 m), aiming (4.5 m); `Restored` after 30 s unseen. Shot,
+  kill, voice and the behind-a-wall case were not re-run: the code is a rename-only copy of the
+  version verified in A La Deriva, so the user accepted partial coverage. No script errors from the
+  addon. Side effect seen: after a break the AI moves to the spawn, and a respawned player breaks by
+  proximity about 10 s later (spawn camping; a test-world artefact).
+
 ## Next step
-T0b: a host entity for the component and a manual test run; the agent reads the log.
+T1: suspicion meter.

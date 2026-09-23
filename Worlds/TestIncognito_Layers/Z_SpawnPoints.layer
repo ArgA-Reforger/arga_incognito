@@ -1,0 +1,23 @@
+SCR_SpawnPoint : "{0BF61D9D5EF77711}Prefabs/MP/Spawning/SpawnPoint_ARGA_CP.et" {
+ coords 2684.38 77.344 1683.464
+ angles 0 -22.889 0
+ m_Info SCR_UIInfo "{56B4CC4ECACA2C37}" {
+  Name "Base ArgA"
+ }
+ m_bUseNearbySpawnPositions 1
+ m_fSpawnPositionUsageRange 100
+}
+$grp GenericEntity : "{EFA7233213E77C2E}Prefabs/Systems/SpawnPoints/SpawnPosition.et" {
+ {
+  coords 2686.4 77.37 1680.334
+  angles 0 -55.855 0
+ }
+ {
+  coords 2684.282 77.348 1680.53
+  angles 0 -55.61 0
+ }
+ {
+  coords 2682.171 77.344 1680.544
+  angles 0 -54.733 0
+ }
+}
