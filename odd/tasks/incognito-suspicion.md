@@ -37,7 +37,7 @@ is never wired to any entity, rebuilt on top of our server-authoritative, dedica
   re-tasks the existing group instead of spawning another. Cap on simultaneous groups.
 
 ## Tasks
-- [ ] T0 - Copy `ARGA_DisguiseComponent` and its VON bridge into this addon as
+- [x] T0 - Copy `ARGA_DisguiseComponent` and its VON bridge into this addon as
       `ARGA_IncognitoComponent`, with no behaviour change. Rename classes and log tag only.
 - [ ] T0b - Prefab / world entity that hosts the component, and a dedicated-server re-run of the
       12/09 checks (sprint, aim, proximity, voice).
@@ -46,14 +46,18 @@ is never wired to any entity, rebuilt on top of our server-authoritative, dedica
 - [ ] T3 - Reinforcements: timed despawn out of sight, reuse radius, group cap.
 
 ## TDD
-Strict TDD is enabled globally, but this addon has no Enforce Script test runner. Checks are:
-compile in Workbench plus play / dedicated-server runs with log evidence.
+Strict TDD is enabled globally, but this addon has no Enforce Script test runner. Checks are manual:
+the user runs Workbench / play / dedicated-server tests and the agent reads the logs.
 
 ## Delivery
 Strategy: ask-on-risk. Branch `feat/incognito-component`.
 
 ## Progress
-- T0: route direct inline (2 files, mechanical copy + rename).
+- T0: route direct inline (2 files, mechanical copy + rename). Commit `6b4294b`. Word diff against
+  the A La Deriva source shows only the renames; A La Deriva files untouched (mtime 2026-09-12).
+  `mod_validate` passed (structure, gproj, scripts, references). NOT compiled yet: Workbench NET API
+  did not respond. Review assess: medium, review due; native review blocked at the untracked-files
+  selection step (`addon.gproj` is untracked), so the commit is unreviewed.
 
 ## Next step
-T0.
+T0b: a host entity for the component and a manual test run; the agent reads the log.
