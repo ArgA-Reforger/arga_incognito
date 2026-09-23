@@ -262,7 +262,14 @@ Strategy: ask-on-risk. Branch `feat/incognito-component`.
   USSR as an instant break in combat too; in an incognito mission the player is expected to break off
   when the disguise faction and the third party start fighting. Kill breaks now log the victim.
 
+- Test layer cleaned: debug log off, despawn time and reuse radius back to the component defaults
+  (reinforcements stay enabled with the naval infantry group at 150 m). README written in English and
+  Spanish: setup, terms, rule table in and out of combat, suspicion, reinforcements, attributes,
+  mission-maker notes and verification status.
+
 ## Next step
-Turn off the test-layer debug log; turn off the test-layer debug log;
+Delivery (push / PR) is the user's decision.
+
+Superseded next step: turn off the test-layer debug log; turn off the test-layer debug log;
 delivery (push / PR) is the user's decision.
 Delivery (push / PR) is the user's decision.
