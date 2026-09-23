@@ -42,7 +42,7 @@ is never wired to any entity, rebuilt on top of our server-authoritative, dedica
 - [x] T0b - Prefab / world entity that hosts the component, and a dedicated-server re-run of the
       12/09 checks (sprint, aim, proximity, voice).
 - [x] T1 - Suspicion meter: instant-break vs accumulating rules, decay, recovery threshold.
-- [ ] T2 - Reinforcements: spawn at distance and bearing, move to break point.
+- [x] T2 - Reinforcements: spawn at distance and bearing, move to break point.
 - [ ] T3 - Reinforcements: timed despawn out of sight, reuse radius, group cap.
 
 ## TDD
@@ -103,5 +103,12 @@ Strategy: ask-on-risk. Branch `feat/incognito-component`.
   despawn or cap yet (T3), so every break spawns a new group. No check that the spawn point is clear
   of buildings or water. Test layer: USSR light fireteam at 150 m north.
 
+- T2 test (log `logs_2026-09-23_11-56-31`): break `suspicion:sprinting` at 11:58:26 and
+  `Reinforcements spawned` in the same tick, exactly 150 m north of the break point (2678.9, 1697.7 ->
+  2678.9, 1847.7). The user saw the group arrive from the north and search the area; at `Restored`
+  (11:59:21) the nearest hunter stood 5 m from the break point. No addon errors. The player also
+  spawned with the pinned prefab, confirming the variant fix. The user then switched the test group
+  to `Group_USSR_SentryTeam_NI` (naval infantry) to tell it apart from the local fireteam.
+
 ## Next step
-T2: manual test; the agent reads the log.
+T3: timed despawn out of sight, reuse radius, group cap.
