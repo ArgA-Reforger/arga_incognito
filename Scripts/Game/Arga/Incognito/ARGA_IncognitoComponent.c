@@ -109,7 +109,7 @@ class ARGA_IncognitoComponent : ScriptComponent
 	[Attribute("300", UIWidgets.Slider, "Si una nueva ruptura ocurre a menos de esta distancia de un grupo vivo, se reasigna ese grupo en vez de crear otro.", params: "0 2000 1", category: "Reinforcements")]
 	protected float m_fReinforcementReuseRadius;
 
-	[Attribute("2", UIWidgets.Slider, "Maximo de grupos de refuerzo a la vez. Al llegar al maximo, se reasigna el grupo mas cercano.", params: "1 10 1", category: "Reinforcements")]
+	[Attribute("1", UIWidgets.Slider, "Maximo de grupos de refuerzo a la vez. Al llegar al maximo, se reasigna el grupo mas cercano.", params: "1 10 1", category: "Reinforcements")]
 	protected int m_iMaxReinforcementGroups;
 
 	[Attribute("0", UIWidgets.CheckBox, "Diagnostico: imprime en el log que percibia la IA en cada ruptura y en cada recuperacion del disfraz.", category: "Disguise Break")]

@@ -5,9 +5,7 @@ GenericEntity ARGA_Incognito {
    m_sReinforcementGroup "{85384D373DB6EBBB}Prefabs/Groups/OPFOR/Naval_Infantry/Group_USSR_SentryTeam_NI.et"
    m_fReinforcementDistance 150
    m_fReinforcementDespawnSeconds 30
-   m_fReinforcementReuseRadius 50
-   m_iMaxReinforcementGroups 1
-   m_bDebugLog 1
+   m_fReinforcementReuseRadius 50   m_bDebugLog 1
   }
  }
  coords 1891.659 11.5 1829.161

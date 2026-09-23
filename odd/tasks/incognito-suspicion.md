@@ -182,6 +182,9 @@ Strategy: ask-on-risk. Branch `feat/incognito-component`.
   in front of a witness always breaks first) and the group cap. They stay UNVERIFIED in play; covered
   only by code reading and the native review.
 
+- Default reinforcement cap changed from 2 to 1 (user, 2026-09-23); mission editors will test raising
+  it. Test layer no longer overrides the cap. FIA moved back ~100 m south of the spawn for run B.
+
 ## Next step
 Run B (FIA near USSR): third-party rules.
 Delivery (push / PR) is the user's decision.
