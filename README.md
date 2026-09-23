@@ -153,6 +153,14 @@ Verified in Workbench and on a dedicated server: every rule above, own combat, r
 re-tasking and despawn. Not reproduced in play (AI reactions are hard to stage), only checked by code
 reading: taking out a victim who faces the player with one shot, and reaching the group cap.
 
+### Credits
+
+Arga Incognito is an original ArgA design. It grew out of the disguise system first built for the
+ArgA mission *A La Deriva*, and takes the idea of a gradual suspicion level and a reinforcement response
+from the Workshop mod
+[Incognito-Continuatio](https://reforger.armaplatform.com/workshop/69857EB31267EAD0-Incognito-Continuatio).
+No code was taken from that mod; the implementation here is our own.
+
 ---
 
 ## Español
@@ -308,3 +316,11 @@ Verificado en Workbench y en servidor dedicado: todas las reglas de arriba, el c
 refuerzos, la reasignación y el retiro. No reproducido en juego (las reacciones de la IA son difíciles
 de forzar), solo revisado en el código: voltear de un tiro a una víctima que mira al jugador, y llegar
 al máximo de grupos.
+
+### Créditos
+
+Arga Incognito es un diseño propio de ArgA. Surge del sistema de disfraz creado primero para la misión
+de ArgA *A La Deriva*, y toma la idea de un nivel de sospecha gradual y de una respuesta con refuerzos
+del mod del Workshop
+[Incognito-Continuatio](https://reforger.armaplatform.com/workshop/69857EB31267EAD0-Incognito-Continuatio).
+No se tomó código de ese mod; la implementación es propia.
