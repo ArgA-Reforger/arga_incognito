@@ -197,6 +197,14 @@ Strategy: ask-on-risk. Branch `feat/incognito-component`.
   adds no sprint suspicion and does not count as a stray-shot witness. Aiming at or shooting the
   outfit's own side is unaffected.
 
+- Run B repeated (same log, from 14:14): five shots 14:14:42-53 still `target=0 aimed=NULL`, but no
+  suspicion followed (no calm observer saw them). Then sprinting 14:15:03-06 in view of a USSR at
+  ~48 m raised suspicion 15 -> 100 and broke `suspicion:sprinting`; the USSR then attacked. Open
+  questions: why the shots at FIA found no target even with the hidden fallback, and which threat
+  state the sprint witness had. Diagnostics added (debug log only): `Aim` line on untargeted shots
+  (aim direction, closest AI to the aim line, cosine, distance, chest clear) and `threat=` on every
+  break witness.
+
 ## Next step
-Repeat run B.
+Repeat run B with the new diagnostics.
 Delivery (push / PR) is the user's decision.

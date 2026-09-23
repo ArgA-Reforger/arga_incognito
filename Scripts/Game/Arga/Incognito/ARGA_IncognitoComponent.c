@@ -754,19 +754,61 @@ class ARGA_IncognitoComponent : ScriptComponent
 	//! shooting at nothing in particular is what everyone does.
 	protected bool IsInCombat(IEntity aiEntity)
 	{
+		return ThreatStateOf(aiEntity) >= EAIThreatState.ALERTED;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! The AI's own EAIThreatState, or -1 when it has no threat system.
+	protected int ThreatStateOf(IEntity aiEntity)
+	{
 		AIControlComponent control = AIControlComponent.Cast(aiEntity.FindComponent(AIControlComponent));
 		if (!control)
-			return false;
+			return -1;
 
 		AIAgent agent = control.GetControlAIAgent();
 		if (!agent)
-			return false;
+			return -1;
 
 		SCR_AIUtilityComponent utility = SCR_AIUtilityComponent.Cast(agent.FindComponent(SCR_AIUtilityComponent));
 		if (!utility || !utility.m_ThreatSystem)
-			return false;
+			return -1;
 
-		return utility.m_ThreatSystem.GetState() >= EAIThreatState.ALERTED;
+		return utility.m_ThreatSystem.GetState();
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Diagnostics only: the AI character closest to the weapon's aim line, whatever the cone, with the
+	//! cosine of its angle, its distance and whether the chest is in clear line of fire.
+	protected string DescribeAim(IEntity player, array<IEntity> aiEntities)
+	{
+		ChimeraCharacter character = ChimeraCharacter.Cast(player);
+		if (!character || !character.GetWeaponAimingComponent())
+			return "no weapon aiming component";
+
+		vector aimDir = character.GetWeaponAimingComponent().GetAimingDirectionWorld();
+		vector eye = EyeOf(player);
+
+		IEntity closest;
+		float closestDot = -1;
+
+		foreach (IEntity aiEntity : aiEntities)
+		{
+			if (aiEntity == player)
+				continue;
+
+			float dot = vector.Dot(aimDir, vector.Direction(eye, BodyPoint(aiEntity.GetOrigin(), EyeOf(aiEntity), 1)).Normalized());
+			if (dot <= closestDot)
+				continue;
+
+			closest = aiEntity;
+			closestDot = dot;
+		}
+
+		if (!closest)
+			return string.Format("aimDir=%1 no AI", aimDir);
+
+		vector chest = BodyPoint(closest.GetOrigin(), EyeOf(closest), 1);
+		return string.Format("aimDir=%1 closest=%2 dot=%3 dist=%4 chestClear=%5", aimDir, closest, closestDot, vector.Distance(eye, chest), TraceFraction(eye, chest, closest, player) >= 1);
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -939,7 +981,7 @@ class ARGA_IncognitoComponent : ScriptComponent
 			if (state.m_fRestoredTime > 0)
 				sinceRestore = (GetGame().GetWorld().GetWorldTime() - state.m_fRestoredTime) * 0.001;
 
-			Print(string.Format("[ARGA_Incognito][Debug] Break witness reason=%1 sinceRestore=%2s %3", reason, sinceRestore, DescribePerception(witness, entity)), LogLevel.NORMAL);
+			Print(string.Format("[ARGA_Incognito][Debug] Break witness reason=%1 sinceRestore=%2s threat=%3 %4", reason, sinceRestore, ThreatStateOf(witness), DescribePerception(witness, entity)), LogLevel.NORMAL);
 		}
 
 		PerceivableComponent perceivable = PerceivableComponent.Cast(entity.FindComponent(PerceivableComponent));
@@ -1246,7 +1288,11 @@ class ARGA_IncognitoComponent : ScriptComponent
 		int target = ClassifyAim(state.m_Entity, aiEntities, outfitFaction, aimed);
 
 		if (m_bDebugLog)
+		{
 			Print(string.Format("[ARGA_Incognito][Debug] Shot playerId=%1 target=%2 aimed=%3", state.m_iPlayerId, target, aimed), LogLevel.NORMAL);
+			if (target == TARGET_NONE)
+				Print(string.Format("[ARGA_Incognito][Debug] Aim %1", DescribeAim(state.m_Entity, aiEntities)), LogLevel.NORMAL);
+		}
 
 		// Shooting at an enemy of the outfit is what that faction would do itself.
 		if (target == TARGET_OUTFIT_ENEMY)
