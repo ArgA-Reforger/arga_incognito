@@ -651,11 +651,14 @@ class ARGA_IncognitoComponent : ScriptComponent
 
 	//------------------------------------------------------------------------------------------------
 	//! The alive AI character the player's weapon points at: closest to the aim line within a narrow
-	//! cone, in range, and with a clear line of fire. A cone instead of a hit test, so a miss aimed at
-	//! someone still counts as aimed at him. Checks head, chest and hips, so crouched or close targets
-	//! are not missed. Null when nobody is aimed at.
-	protected IEntity FindAimedCharacter(IEntity player, array<IEntity> aiEntities)
+	//! cone and in range. A cone instead of a hit test, so a miss aimed at someone still counts as aimed
+	//! at him. Hips, chest and head are each checked; the character is visible when any of the ones
+	//! inside the cone has a clear line of fire, so a head peeking over cover counts. Returns the best
+	//! visible one; hidden gets the best one behind cover. Both null when nobody is aimed at.
+	protected IEntity FindAimedCharacter(IEntity player, array<IEntity> aiEntities, out IEntity hidden)
 	{
+		hidden = null;
+
 		ChimeraCharacter character = ChimeraCharacter.Cast(player);
 		if (!character)
 			return null;
@@ -670,6 +673,7 @@ class ARGA_IncognitoComponent : ScriptComponent
 
 		IEntity best;
 		float bestDot = AIM_TARGET_MIN_DOT;
+		float hiddenDot = AIM_TARGET_MIN_DOT;
 
 		foreach (IEntity aiEntity : aiEntities)
 		{
@@ -682,33 +686,87 @@ class ARGA_IncognitoComponent : ScriptComponent
 			vector head = EyeOf(aiEntity);
 			vector feet = aiEntity.GetOrigin();
 			float dot = -1;
-			vector point;
 
 			for (int i = 0; i < 3; i++)
 			{
-				vector candidate = feet + (head - feet) * (0.4 + 0.3 * i);
-				float candidateDot = vector.Dot(aimDir, vector.Direction(eye, candidate).Normalized());
-				if (candidateDot <= dot)
-					continue;
-
-				dot = candidateDot;
-				point = candidate;
+				dot = Math.Max(dot, vector.Dot(aimDir, vector.Direction(eye, BodyPoint(feet, head, i)).Normalized()));
 			}
 
-			if (dot <= bestDot)
+			if (dot <= AIM_TARGET_MIN_DOT || (dot <= bestDot && dot <= hiddenDot))
 				continue;
 
 			if (!IsAliveCharacter(aiEntity))
 				continue;
 
-			if (TraceFraction(eye, point, aiEntity, player) < 1)
-				continue;
+			// Rays only for the body points inside the cone, cheapest first.
+			bool visible = false;
+			for (int j = 0; j < 3 && !visible; j++)
+			{
+				vector point = BodyPoint(feet, head, j);
+				if (vector.Dot(aimDir, vector.Direction(eye, point).Normalized()) <= AIM_TARGET_MIN_DOT)
+					continue;
 
-			best = aiEntity;
-			bestDot = dot;
+				visible = TraceFraction(eye, point, aiEntity, player) >= 1;
+			}
+
+			if (visible && dot > bestDot)
+			{
+				best = aiEntity;
+				bestDot = dot;
+			}
+			else if (!visible && dot > hiddenDot)
+			{
+				hidden = aiEntity;
+				hiddenDot = dot;
+			}
 		}
 
 		return best;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Hips, chest and head for index 0, 1 and 2.
+	protected vector BodyPoint(vector feet, vector head, int index)
+	{
+		return feet + (head - feet) * (0.4 + 0.3 * index);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! What the player's weapon points at. A visible character decides. Failing that, an enemy of the
+	//! outfit behind cover still counts, so suppressive fire at him is not a stray shot; the outfit's own
+	//! side only counts when visible.
+	protected int ClassifyAim(IEntity player, array<IEntity> aiEntities, Faction outfitFaction, out IEntity aimed)
+	{
+		IEntity hidden;
+		aimed = FindAimedCharacter(player, aiEntities, hidden);
+		if (aimed)
+			return ClassifyTarget(aimed, outfitFaction);
+
+		if (ClassifyTarget(hidden, outfitFaction) != TARGET_OUTFIT_ENEMY)
+			return TARGET_NONE;
+
+		aimed = hidden;
+		return TARGET_OUTFIT_ENEMY;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! True while the AI's own threat assessment says it is fighting: in a firefight, running and
+	//! shooting at nothing in particular is what everyone does.
+	protected bool IsInCombat(IEntity aiEntity)
+	{
+		AIControlComponent control = AIControlComponent.Cast(aiEntity.FindComponent(AIControlComponent));
+		if (!control)
+			return false;
+
+		AIAgent agent = control.GetControlAIAgent();
+		if (!agent)
+			return false;
+
+		SCR_AIUtilityComponent utility = SCR_AIUtilityComponent.Cast(agent.FindComponent(SCR_AIUtilityComponent));
+		if (!utility || !utility.m_ThreatSystem)
+			return false;
+
+		return utility.m_ThreatSystem.GetState() >= EAIThreatState.ALERTED;
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -757,7 +815,7 @@ class ARGA_IncognitoComponent : ScriptComponent
 
 	//------------------------------------------------------------------------------------------------
 	//! First qualifying observer within radius, or null. exclude skips one entity (a kill's own victim).
-	protected IEntity FindObserverInRange(array<IEntity> aiEntities, IEntity player, vector playerPos, float radius, Faction realFaction, Faction outfitFaction, bool requireSight, IEntity exclude = null)
+	protected IEntity FindObserverInRange(array<IEntity> aiEntities, IEntity player, vector playerPos, float radius, Faction realFaction, Faction outfitFaction, bool requireSight, IEntity exclude = null, bool requireCalm = false)
 	{
 		if (radius <= 0)
 			return null;
@@ -772,6 +830,9 @@ class ARGA_IncognitoComponent : ScriptComponent
 				continue;
 
 			if (!IsObserver(aiEntity, player, realFaction, outfitFaction))
+				continue;
+
+			if (requireCalm && IsInCombat(aiEntity))
 				continue;
 
 			if (requireSight && !Sees(aiEntity, player))
@@ -1181,8 +1242,8 @@ class ARGA_IncognitoComponent : ScriptComponent
 		array<IEntity> aiEntities = {};
 		CollectAIEntities(aiEntities);
 
-		IEntity aimed = FindAimedCharacter(state.m_Entity, aiEntities);
-		int target = ClassifyTarget(aimed, outfitFaction);
+		IEntity aimed;
+		int target = ClassifyAim(state.m_Entity, aiEntities, outfitFaction, aimed);
 
 		if (m_bDebugLog)
 			Print(string.Format("[ARGA_Incognito][Debug] Shot playerId=%1 target=%2 aimed=%3", state.m_iPlayerId, target, aimed), LogLevel.NORMAL);
@@ -1211,8 +1272,10 @@ class ARGA_IncognitoComponent : ScriptComponent
 			return;
 		}
 
-		if (witness)
-			RaiseSuspicion(state, m_fStrayShotSuspicion, "stray shot", witness);
+		// Only an observer who is not fighting himself finds a stray shot odd.
+		IEntity calmWitness = FindObserverInRange(aiEntities, state.m_Entity, playerPos, m_fShotRadius, realFaction, outfitFaction, requireSight: true, requireCalm: true);
+		if (calmWitness)
+			RaiseSuspicion(state, m_fStrayShotSuspicion, "stray shot", calmWitness);
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -1408,7 +1471,8 @@ class ARGA_IncognitoComponent : ScriptComponent
 	{
 		// Only aiming at the outfit's own side is suspicious; the cone search runs only with the weapon up.
 		float aimRadius;
-		if ((controller.IsWeaponRaised() || controller.IsWeaponADS()) && ClassifyTarget(FindAimedCharacter(entity, aiEntities), affiliation.GetPerceivedFaction()) == TARGET_DISGUISE_SIDE)
+		IEntity aimTarget;
+		if ((controller.IsWeaponRaised() || controller.IsWeaponADS()) && ClassifyAim(entity, aiEntities, affiliation.GetPerceivedFaction(), aimTarget) == TARGET_DISGUISE_SIDE)
 			aimRadius = m_fAimRadius;
 
 		bool sprinting = IsSprinting(controller);
@@ -1471,7 +1535,8 @@ class ARGA_IncognitoComponent : ScriptComponent
 				}
 			}
 
-			if (sprintRadius > 0 && distance <= sprintRadius)
+			// Everyone runs in a firefight; only a calm observer finds it odd.
+			if (sprintRadius > 0 && distance <= sprintRadius && !IsInCombat(aiEntity))
 			{
 				gain = ScaledGain(m_fSprintSuspicionRate, distance, sprintRadius);
 				sprintGain = Math.Max(sprintGain, gain);

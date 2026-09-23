@@ -1,8 +1,8 @@
+SCR_AIGroup FIA_ThirdParty : "{5BEA04939D148B1D}Prefabs/Groups/INDFOR/Group_FIA_FireTeam.et" {
+ coords 2607.41 71.031 1649.332
+ angles -13.483 0.433 -1.859
+}
 SCR_AIGroup USSR_FireTeam : "{657590C1EC9E27D3}Prefabs/Groups/OPFOR/Group_USSR_LightFireTeam.et" {
  coords 2667.039 78.101 1739.235
  angles 0 161.146 0
-}
-SCR_AIGroup FIA_ThirdParty : "{5BEA04939D148B1D}Prefabs/Groups/INDFOR/Group_FIA_FireTeam.et" {
- coords 2685 77.4 1590
- angles 0 0 0
 }

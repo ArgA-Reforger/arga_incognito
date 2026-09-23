@@ -185,6 +185,18 @@ Strategy: ask-on-risk. Branch `feat/incognito-component`.
 - Default reinforcement cap changed from 2 to 1 (user, 2026-09-23); mission editors will test raising
   it. Test layer no longer overrides the cap. FIA moved back ~100 m south of the spawn for run B.
 
+- Run B (same log, from 14:05; the user moved FIA to 2607, 1649): the disguise broke at 14:06:25 with
+  `suspicion:stray shot`. Sprinting under fire first raised suspicion 12 -> 81 (USSR observer ~58 m),
+  then two shots at FIA came out `target=0 aimed=NULL` (FIA ~65 m away, lower and behind cover) and
+  added 30 each. Both are normal behaviour in a firefight against a common enemy.
+- Fixes (user decision): (1) target detection accepts a character when any body point inside the cone
+  has a clear line of fire, and an enemy of the outfit hidden behind cover still counts as the target
+  (suppressive fire); the outfit's own side counts only when visible. (2) Combat context: an observer
+  whose `SCR_AIThreatSystem.GetState()` is ALERTED or THREATENED (`SCR_AIThreatSystem.c:5-11`,
+  reached through `AIControlComponent.GetControlAIAgent()` -> `SCR_AIUtilityComponent.m_ThreatSystem`)
+  adds no sprint suspicion and does not count as a stray-shot witness. Aiming at or shooting the
+  outfit's own side is unaffected.
+
 ## Next step
-Run B (FIA near USSR): third-party rules.
+Repeat run B.
 Delivery (push / PR) is the user's decision.
