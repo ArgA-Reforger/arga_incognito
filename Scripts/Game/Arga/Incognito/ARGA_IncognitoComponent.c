@@ -1,0 +1,981 @@
+[ComponentEditorProps(category: "ArgA/Component/Gameplay", description: "Inicializa la faccion percibida por ropa en game modes que reemplazan el spawn vanilla")]
+class ARGA_IncognitoComponentClass : ScriptComponentClass
+{
+}
+
+//! Initializes the vanilla perceived-faction (disguise) system under game modes that bypass the vanilla
+//! spawn pipeline, where its own spawn hook never runs. Server only.
+//!
+//! Disguise break (global, faction-agnostic): a disguised player who shoots, aims, sprints, stands too
+//! close, talks, or kills in front of an "observer" (an enemy-of-his-real-faction AI that is not
+//! enemy-of-his-outfit) has his AI override cleared. Restored once no "hunter" (enemy-of-his-real-faction
+//! AI) has seen him for m_fRecoverySeconds. Voice is the only rule that does not require line of sight,
+//! and its radius comes from the VON component the player transmits through.
+class ARGA_IncognitoState
+{
+	int m_iPlayerId;
+	SCR_PlayerController m_Controller;
+	IEntity m_Entity;
+	bool m_bBroken;
+	float m_fLastSeenTime;
+	float m_fRestoredTime;
+	float m_fVoiceTime;
+	float m_fVoiceRadius;
+	string m_sLastPerception;
+	bool m_bWasSprinting;
+	vector m_vLastPos;
+	float m_fLastPosTime;
+	int m_iLastSpeedBucket;
+}
+
+class ARGA_IncognitoComponent : ScriptComponent
+{
+	[Attribute("75", UIWidgets.Slider, "Radio en metros: un observador dentro que ve al jugador cuando dispara rompe el disfraz. 0 desactiva este disparador.", params: "0 500 1", category: "Disguise Break")]
+	protected float m_fShotRadius;
+
+	[Attribute("50", UIWidgets.Slider, "Radio en metros: un observador que ve al jugador apuntando o en ADS rompe el disfraz. 0 desactiva este disparador.", params: "0 200 1", category: "Disguise Break")]
+	protected float m_fAimRadius;
+
+	[Attribute("100", UIWidgets.Slider, "Radio en metros: un observador que ve al jugador esprintando rompe el disfraz. 0 desactiva este disparador.", params: "0 500 1", category: "Disguise Break")]
+	protected float m_fSprintRadius;
+
+	[Attribute("10", UIWidgets.Slider, "Radio en metros: un observador dentro que ve al jugador rompe el disfraz por cercania. 0 desactiva este disparador.", params: "0 100 1", category: "Disguise Break")]
+	protected float m_fProximityRadius;
+
+	[Attribute("200", UIWidgets.Slider, "Radio en metros para testigos que deben ver al jugador cuando mata. Tambien se usa para detectar cazadores durante la recuperacion. 0 desactiva estos usos.", params: "0 500 1", category: "Disguise Break")]
+	protected float m_fWitnessRadius;
+
+	[Attribute("1", UIWidgets.CheckBox, "Hablar por voz directa rompe el disfraz si un enemigo esta dentro del alcance de la voz. El alcance NO se configura aca: sale del propio mod de voz.", category: "Disguise Break")]
+	protected bool m_bVoiceBreak;
+
+	[Attribute("30", UIWidgets.Slider, "Tiempo en segundos sin ser visto por un enemigo real para recuperar el disfraz tras romperse.", params: "0 300 1", category: "Disguise Break")]
+	protected float m_fRecoverySeconds;
+
+	[Attribute("0", UIWidgets.CheckBox, "Diagnostico: imprime en el log que percibia la IA en cada ruptura y en cada recuperacion del disfraz.", category: "Disguise Break")]
+	protected bool m_bDebugLog;
+
+	//! Server tick period, also the voice window: voice arrives every frame while the key is held.
+	protected const int TICK_MS = 500;
+
+	//! cos(70 deg): half of the 140 deg peripheral FOV vanilla gives the EyesSensor in Character_Base.et.
+	protected const float MIN_FOV_DOT = 0.342;
+
+	protected const float EYE_HEIGHT = 1.6;
+
+	//! GetMovementSpeed() slides continuously up to 2 as the player wheels from walk to run, and jumps to
+	//! a fixed 3 on sprint. Measured on a dedicated server: run peaked at 1.98, sprint held exactly 3.
+	protected const float SPRINT_MOVEMENT_SPEED = 2.5;
+
+	//! Reused instead of allocated per trace, as vanilla does in its own AI trace nodes.
+	protected ref TraceParam m_TraceParam = new TraceParam();
+	protected ref array<IEntity> m_aTraceExclude = {null, null};
+
+	protected int m_iTraceCount;
+	protected int m_iFovRejects;
+
+	//! Diagnostics: why the last Sees() said no, cone or geometry.
+	protected string m_sLastSeeFail;
+
+	protected ref map<int, ref ARGA_IncognitoState> m_mStates = new map<int, ref ARGA_IncognitoState>();
+
+	//! Speaking range per VON component class. Resolved once: OnVoNUsed fires every frame.
+	protected ref map<string, float> m_mVoiceRadii = new map<string, float>();
+
+	protected static ARGA_IncognitoComponent s_Instance;
+
+	//------------------------------------------------------------------------------------------------
+	override void OnPostInit(IEntity owner)
+	{
+		super.OnPostInit(owner);
+		SetEventMask(owner, EntityEvent.INIT);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	override void EOnInit(IEntity owner)
+	{
+		super.EOnInit(owner);
+
+		if (!GetGame().InPlayMode())
+			return;
+
+		if (!Replication.IsServer())
+		{
+			Print("[ARGA_Incognito] EOnInit skipped, not the server.", LogLevel.NORMAL);
+			return;
+		}
+
+		SCR_BaseGameMode gameMode = SCR_BaseGameMode.Cast(GetGame().GetGameMode());
+		if (!gameMode)
+		{
+			Print("[ARGA_Incognito] No SCR_BaseGameMode found. Perceived faction will never initialize.", LogLevel.ERROR);
+			return;
+		}
+
+		if (!SCR_PerceivedFactionManagerComponent.GetInstance())
+			Print("[ARGA_Incognito] No SCR_PerceivedFactionManagerComponent in the world. Check the game mode.", LogLevel.WARNING);
+
+		gameMode.GetOnPlayerRegistered().Insert(OnPlayerRegistered);
+		gameMode.GetOnPlayerDisconnected().Insert(OnPlayerDisconnected);
+		gameMode.GetOnControllableDestroyed().Insert(OnControllableDestroyed);
+
+		s_Instance = this;
+
+		Print("[ARGA_Incognito] Armed on server. Waiting for players.", LogLevel.NORMAL);
+
+		GetGame().GetCallqueue().CallLater(Tick, TICK_MS, true);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	override void OnDelete(IEntity owner)
+	{
+		super.OnDelete(owner);
+
+		if (s_Instance == this)
+			s_Instance = null;
+
+		GetGame().GetCallqueue().Remove(Tick);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Entry point for the modded SCR_VoNComponent. vonComponent is the speaker's active one.
+	static void NotifyVoiceUsed(int playerId, SCR_VoNComponent vonComponent)
+	{
+		if (s_Instance)
+			s_Instance.OnVoiceUsed(playerId, vonComponent);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Fires every frame while transmitting, so it only stamps state; the observer search stays in Tick.
+	protected void OnVoiceUsed(int playerId, SCR_VoNComponent vonComponent)
+	{
+		if (!m_bVoiceBreak || !vonComponent)
+			return;
+
+		ARGA_IncognitoState state = m_mStates.Get(playerId);
+		if (!state || state.m_bBroken || !state.m_Entity)
+			return;
+
+		float radius = ResolveVoiceRadius(vonComponent, state.m_Entity);
+		if (radius <= 0)
+			return;
+
+		state.m_fVoiceTime = GetGame().GetWorld().GetWorldTime();
+		state.m_fVoiceRadius = radius;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Speaking range read from the mod's own .acp, so it is never configured in two places.
+	//! Keyed by class, which stays available when the lookup fails, so failures also cache once.
+	protected float ResolveVoiceRadius(SCR_VoNComponent vonComponent, IEntity entity)
+	{
+		string key = vonComponent.ClassName();
+
+		float cached;
+		if (m_mVoiceRadii.Find(key, cached))
+			return cached;
+
+		ResourceName acp;
+		float radius = 0;
+		string detail;
+
+		BaseContainer source = vonComponent.GetComponentSource(entity);
+		if (!source)
+			detail = "sin component source";
+		else if (!source.Get("Filename", acp))
+			detail = "el componente no tiene Filename";
+		else
+		{
+			radius = ReadOuterRange(acp);
+			detail = acp;
+		}
+
+		m_mVoiceRadii.Set(key, radius);
+
+		if (m_bDebugLog)
+			Print(string.Format("[ARGA_Incognito][Debug] Voice range %1 = %2m (%3)", key, radius, detail), LogLevel.NORMAL);
+
+		return radius;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	protected bool SpokeSinceLastTick(ARGA_IncognitoState state)
+	{
+		if (state.m_fVoiceRadius <= 0 || state.m_fVoiceTime <= 0)
+			return false;
+
+		return (GetGame().GetWorld().GetWorldTime() - state.m_fVoiceTime) <= TICK_MS;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Returns the .acp's speaking range in metres, or 0 if it cannot be read.
+	protected float ReadOuterRange(ResourceName acp)
+	{
+		Resource holder = BaseContainerTools.LoadContainer(acp);
+		if (!holder)
+			return 0;
+
+		BaseContainer root = holder.GetResource().ToBaseContainer();
+		if (!root)
+			return 0;
+
+		BaseContainerList amplitudes = root.GetObjectArray("amplitudes");
+		if (!amplitudes || amplitudes.Count() == 0)
+			return 0;
+
+		float outerRange;
+		if (!amplitudes.Get(0).Get("outerRange", outerRange))
+			return 0;
+
+		return outerRange;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! A player exists now, but under PS they have no character yet: the lobby hands one over later.
+	protected void OnPlayerRegistered(int playerId)
+	{
+		SCR_PlayerController controller = SCR_PlayerController.Cast(GetGame().GetPlayerManager().GetPlayerController(playerId));
+		if (!controller)
+		{
+			Print(string.Format("[ARGA_Incognito] No PlayerController for playerId=%1.", playerId), LogLevel.WARNING);
+			return;
+		}
+
+		if (m_mStates.Contains(playerId))
+			return;
+
+		ARGA_IncognitoState state = new ARGA_IncognitoState();
+		state.m_iPlayerId = playerId;
+		state.m_Controller = controller;
+		m_mStates.Insert(playerId, state);
+		controller.m_OnControlledEntityChanged.Insert(OnControlledEntityChanged);
+
+		Print(string.Format("[ARGA_Incognito] Watching playerId=%1.", playerId), LogLevel.NORMAL);
+
+		// The character may already be assigned when we get here, in which case no event is coming.
+		SyncWatchedEntity(state);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Fast path only: not proven to fire server-side for remote players, so Tick() resyncs anyway.
+	protected void OnControlledEntityChanged(IEntity from, IEntity to)
+	{
+		// The invoker does not say which player fired it, so resync every watched state.
+		foreach (int playerId, ARGA_IncognitoState state : m_mStates)
+			SyncWatchedEntity(state);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! On a real entity change: re-inits the perceived faction, re-arms the shot hook and clears the break
+	//! state. Cheap no-op otherwise, so Tick() can call it every poll.
+	protected void SyncWatchedEntity(ARGA_IncognitoState state)
+	{
+		if (!state.m_Controller)
+			return;
+
+		IEntity current = state.m_Controller.GetControlledEntity();
+		if (current == state.m_Entity)
+			return;
+
+		UnregisterShotHook(state.m_Entity);
+		state.m_Entity = current;
+		state.m_bBroken = false;
+		state.m_fLastSeenTime = 0;
+		state.m_fRestoredTime = 0;
+
+		if (!current)
+			return;
+
+		InitPerceivedFaction(current);
+		RegisterShotHook(current);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	protected void RegisterShotHook(IEntity entity)
+	{
+		EventHandlerManagerComponent eventHandlerManager = EventHandlerManagerComponent.Cast(entity.FindComponent(EventHandlerManagerComponent));
+		if (!eventHandlerManager)
+		{
+			Print(string.Format("[ARGA_Incognito] %1 has no EventHandlerManagerComponent, shot trigger will never fire.", entity), LogLevel.WARNING);
+			return;
+		}
+
+		eventHandlerManager.RegisterScriptHandler("OnProjectileShot", this, OnWeaponFired);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	protected void UnregisterShotHook(IEntity entity)
+	{
+		if (!entity)
+			return;
+
+		EventHandlerManagerComponent eventHandlerManager = EventHandlerManagerComponent.Cast(entity.FindComponent(EventHandlerManagerComponent));
+		if (!eventHandlerManager)
+			return;
+
+		eventHandlerManager.RemoveScriptHandler("OnProjectileShot", this, OnWeaponFired);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Runs the init vanilla would have run on spawn finalize. Idempotent.
+	protected void InitPerceivedFaction(IEntity entity)
+	{
+		if (!entity)
+			return;
+
+		SCR_CharacterFactionAffiliationComponent affiliation = SCR_CharacterFactionAffiliationComponent.Cast(entity.FindComponent(SCR_CharacterFactionAffiliationComponent));
+		if (!affiliation)
+		{
+			Print(string.Format("[ARGA_Incognito] %1 has no SCR_CharacterFactionAffiliationComponent, skipped.", entity), LogLevel.WARNING);
+			return;
+		}
+
+		if (affiliation.HasPerceivedFaction())
+			return;
+
+		affiliation.InitPlayerOutfitFaction_S();
+
+		Faction perceived = affiliation.GetPerceivedFaction();
+		string perceivedKey = "UNKNOWN";
+		if (perceived)
+			perceivedKey = perceived.GetFactionKey();
+
+		Print(string.Format("[ARGA_Incognito] Initialized %1: perceived=%2 disguise=%3", entity, perceivedKey, typename.EnumToString(SCR_ECharacterDisguiseType, affiliation.GetCharacterDisguiseType())), LogLevel.NORMAL);
+
+		ApplyPerceivedFactionForAI(entity, perceived);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Works around a vanilla ordering bug that leaves the AI override unapplied. Mirrors
+	//! SCR_CharacterFactionAffiliationComponent.SetPerceivedFactionForAI().
+	protected void ApplyPerceivedFactionForAI(IEntity entity, Faction perceived)
+	{
+		SCR_PerceivedFactionManagerComponent manager = SCR_PerceivedFactionManagerComponent.GetInstance();
+		if (!manager || !manager.DoesPerceivedFactionChangesAffectsAI())
+			return;
+
+		PerceivableComponent perceivable = PerceivableComponent.Cast(entity.FindComponent(PerceivableComponent));
+		if (!perceivable)
+		{
+			Print(string.Format("[ARGA_Incognito] %1 has no PerceivableComponent, AI will see the real faction.", entity), LogLevel.WARNING);
+			return;
+		}
+
+		Faction aiFaction = perceived;
+		if (!aiFaction)
+			aiFaction = manager.GetFallbackFaction();
+
+		perceivable.SetPerceivedFactionOverride(aiFaction);
+
+		string aiKey = "NONE";
+		if (perceivable.GetPerceivedFaction())
+			aiKey = perceivable.GetPerceivedFaction().GetFactionKey();
+
+		Print(string.Format("[ARGA_Incognito] AI override applied: AI now perceives %1", aiKey), LogLevel.NORMAL);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	protected void OnPlayerDisconnected(int playerId, KickCauseCode cause = KickCauseCode.NONE, int timeout = -1)
+	{
+		SCR_PlayerController controller = SCR_PlayerController.Cast(GetGame().GetPlayerManager().GetPlayerController(playerId));
+		if (controller)
+			controller.m_OnControlledEntityChanged.Remove(OnControlledEntityChanged);
+
+		ARGA_IncognitoState state = m_mStates.Get(playerId);
+		if (state)
+			UnregisterShotHook(state.m_Entity);
+
+		m_mStates.Remove(playerId);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! True when the player is currently wearing a faction's outfit different from his real one.
+	protected bool IsDisguised(SCR_CharacterFactionAffiliationComponent affiliation)
+	{
+		Faction outfit = affiliation.GetPerceivedFaction();
+		if (!outfit)
+			return false;
+
+		return outfit != affiliation.GetAffiliatedFaction();
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Controlled entity of every active AI agent. Cheaper than QueryEntitiesBySphere over the world.
+	protected void CollectAIEntities(out array<IEntity> aiEntities)
+	{
+		array<AIAgent> agents = {};
+		GetGame().GetAIWorld().GetAIAgents(agents);
+
+		foreach (AIAgent agent : agents)
+		{
+			IEntity entity = agent.GetControlledEntity();
+			if (entity)
+				aiEntities.Insert(entity);
+		}
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! An "observer" is an alive AI whose own faction is enemy to the player's real faction but not
+	//! enemy to his outfit faction, i.e. an AI the disguise is currently fooling.
+	protected bool IsObserver(IEntity aiEntity, IEntity player, Faction realFaction, Faction outfitFaction)
+	{
+		if (aiEntity == player)
+			return false;
+
+		SCR_ChimeraCharacter character = SCR_ChimeraCharacter.Cast(aiEntity);
+		if (!character)
+			return false;
+
+		CharacterControllerComponent controller = character.GetCharacterController();
+		if (!controller || controller.IsDead())
+			return false;
+
+		FactionAffiliationComponent affiliation = FactionAffiliationComponent.Cast(aiEntity.FindComponent(FactionAffiliationComponent));
+		if (!affiliation)
+			return false;
+
+		Faction aiFaction = affiliation.GetAffiliatedFaction();
+		if (!aiFaction)
+			return false;
+
+		if (!aiFaction.IsFactionEnemy(realFaction))
+			return false;
+
+		return !aiFaction.IsFactionEnemy(outfitFaction);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! A "hunter" is an alive AI whose own faction is enemy to the player's real faction, regardless of
+	//! his current outfit. Used while broken to decide when the disguise can be restored.
+	protected bool IsHunter(IEntity aiEntity, Faction realFaction)
+	{
+		SCR_ChimeraCharacter character = SCR_ChimeraCharacter.Cast(aiEntity);
+		if (!character)
+			return false;
+
+		CharacterControllerComponent controller = character.GetCharacterController();
+		if (!controller || controller.IsDead())
+			return false;
+
+		FactionAffiliationComponent affiliation = FactionAffiliationComponent.Cast(aiEntity.FindComponent(FactionAffiliationComponent));
+		if (!affiliation)
+			return false;
+
+		Faction aiFaction = affiliation.GetAffiliatedFaction();
+		if (!aiFaction)
+			return false;
+
+		return aiFaction.IsFactionEnemy(realFaction);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Whether aiEntity currently has direct line of sight on player, per its own perception target.
+	//! Real eye position when the entity is a character, origin plus a fixed height otherwise.
+	protected vector EyeOf(IEntity entity)
+	{
+		ChimeraCharacter character = ChimeraCharacter.Cast(entity);
+		if (character)
+			return character.EyePosition();
+
+		vector pos = entity.GetOrigin();
+		pos[1] = pos[1] + EYE_HEIGHT;
+		return pos;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Where the character is actually looking. The body transform is only a fallback: an idle AI keeps
+	//! its body still and turns its head, so using the body alone rejects sightings it really has.
+	protected vector LookDirOf(IEntity entity)
+	{
+		ChimeraCharacter character = ChimeraCharacter.Cast(entity);
+		if (character)
+		{
+			AimingComponent head = character.GetHeadAimingComponent();
+			if (head)
+				return head.GetAimingDirectionWorld();
+		}
+
+		vector transform[4];
+		entity.GetTransform(transform);
+		return transform[2];
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Deliberately ignores BaseTarget: while the disguise works the player is FRIENDLY to that AI, and
+	//! the engine does not trace occlusion for friendlies, so its sight data reads fully visible always.
+	//! Cheap cone check first, ray only for whatever survives it.
+	protected bool Sees(IEntity aiEntity, IEntity player)
+	{
+		vector eye = EyeOf(aiEntity);
+		vector torso = EyeOf(player);
+
+		float dot = vector.DotXZ(LookDirOf(aiEntity), vector.Direction(eye, torso).Normalized());
+		if (dot < MIN_FOV_DOT)
+		{
+			m_iFovRejects++;
+			m_sLastSeeFail = string.Format("fov dot=%1", dot);
+			return false;
+		}
+
+		m_iTraceCount++;
+
+		m_aTraceExclude[0] = aiEntity;
+		m_aTraceExclude[1] = player;
+
+		m_TraceParam.Start = eye;
+		m_TraceParam.End = torso;
+		m_TraceParam.Flags = TraceFlags.ENTS | TraceFlags.OCEAN | TraceFlags.WORLD | TraceFlags.ANY_CONTACT;
+		m_TraceParam.Exclude = null;
+		m_TraceParam.ExcludeArray = m_aTraceExclude;
+
+		float fraction = GetGame().GetWorld().TraceMove(m_TraceParam, null);
+		if (fraction < 1)
+		{
+			m_sLastSeeFail = string.Format("blocked frac=%1", fraction);
+			return false;
+		}
+
+		m_sLastSeeFail = "";
+		return true;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! First qualifying observer within radius, or null. exclude skips one entity (a kill's own victim).
+	protected IEntity FindObserverInRange(array<IEntity> aiEntities, IEntity player, vector playerPos, float radius, Faction realFaction, Faction outfitFaction, bool requireSight, IEntity exclude = null)
+	{
+		if (radius <= 0)
+			return null;
+
+		foreach (IEntity aiEntity : aiEntities)
+		{
+			if (aiEntity == exclude)
+				continue;
+
+			// Distance first: it is a vector subtraction, while IsObserver() does component lookups.
+			if (vector.Distance(playerPos, aiEntity.GetOrigin()) > radius)
+				continue;
+
+			if (!IsObserver(aiEntity, player, realFaction, outfitFaction))
+				continue;
+
+			if (requireSight && !Sees(aiEntity, player))
+				continue;
+
+			return aiEntity;
+		}
+
+		return null;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Diagnostics only: the closest alive hunter within radius, whether it sees the player or not.
+	protected IEntity FindClosestHunter(array<IEntity> aiEntities, IEntity player, float radius, Faction realFaction)
+	{
+		vector playerPos = player.GetOrigin();
+		IEntity closest;
+		float closestDistance = radius;
+
+		foreach (IEntity aiEntity : aiEntities)
+		{
+			float distance = vector.Distance(playerPos, aiEntity.GetOrigin());
+			if (distance > closestDistance)
+				continue;
+
+			if (!IsHunter(aiEntity, realFaction))
+				continue;
+
+			closest = aiEntity;
+			closestDistance = distance;
+		}
+
+		return closest;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Diagnostics only: what aiEntity's perception currently holds about player.
+	protected string DescribePerception(IEntity aiEntity, IEntity player)
+	{
+		float distance = vector.Distance(player.GetOrigin(), aiEntity.GetOrigin());
+
+		PerceptionComponent perception = PerceptionComponent.Cast(aiEntity.FindComponent(PerceptionComponent));
+		if (!perception)
+			return string.Format("ai=%1 dist=%2 perception=NONE", aiEntity, distance);
+
+		BaseTarget target = perception.FindTargetPerceptionObject(player);
+		if (!target)
+			return string.Format("ai=%1 dist=%2 target=NONE", aiEntity, distance);
+
+		// interval is how stale trace/sinceSeen can be: perception refreshes slower at higher LOD.
+		return string.Format("ai=%1 dist=%2 category=%3 sinceSeen=%4 sinceDetected=%5 trace=%6 exposure=%7 interval=%8",
+			aiEntity,
+			distance,
+			typename.EnumToString(ETargetCategory, target.GetTargetCategory()),
+			target.GetTimeSinceSeen(),
+			target.GetTimeSinceDetected(),
+			target.GetTraceFraction(),
+			target.GetExposure(),
+			perception.GetUpdateInterval());
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Scans aiEntities for one hunter within radius that currently sees player. Always requires sight.
+	protected bool HasHunterInRange(array<IEntity> aiEntities, IEntity player, float radius, Faction realFaction)
+	{
+		if (radius <= 0)
+			return false;
+
+		vector playerPos = player.GetOrigin();
+
+		foreach (IEntity aiEntity : aiEntities)
+		{
+			if (vector.Distance(playerPos, aiEntity.GetOrigin()) > radius)
+				continue;
+
+			if (!IsHunter(aiEntity, realFaction))
+				continue;
+
+			if (!Sees(aiEntity, player))
+				continue;
+
+			return true;
+		}
+
+		return false;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Clears the AI override so every AI resolves the player's real faction. No-op if already broken.
+	//! Deliberately does NOT call SCR_FactionManager.RequestUpdateAllTargetsFactions(): it froze AI targets.
+	protected void Break(ARGA_IncognitoState state, string reason, IEntity witness)
+	{
+		if (state.m_bBroken)
+			return;
+
+		IEntity entity = state.m_Entity;
+		if (!entity)
+			return;
+
+		// Logged before touching the override, so it shows what the AI held while still fooled.
+		if (m_bDebugLog && witness)
+		{
+			float sinceRestore = -1;
+			if (state.m_fRestoredTime > 0)
+				sinceRestore = (GetGame().GetWorld().GetWorldTime() - state.m_fRestoredTime) * 0.001;
+
+			Print(string.Format("[ARGA_Incognito][Debug] Break witness reason=%1 sinceRestore=%2s %3", reason, sinceRestore, DescribePerception(witness, entity)), LogLevel.NORMAL);
+		}
+
+		PerceivableComponent perceivable = PerceivableComponent.Cast(entity.FindComponent(PerceivableComponent));
+		if (!perceivable)
+			return;
+
+		perceivable.SetPerceivedFactionOverride(null);
+
+		state.m_bBroken = true;
+		state.m_fLastSeenTime = GetGame().GetWorld().GetWorldTime();
+
+		Print(string.Format("[ARGA_Incognito] Broken playerId=%1 reason=%2", state.m_iPlayerId, reason), LogLevel.NORMAL);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Re-applies the outfit's AI override once recovery time has passed unseen.
+	protected void Restore(ARGA_IncognitoState state)
+	{
+		IEntity entity = state.m_Entity;
+		if (!entity)
+			return;
+
+		SCR_CharacterFactionAffiliationComponent affiliation = SCR_CharacterFactionAffiliationComponent.Cast(entity.FindComponent(SCR_CharacterFactionAffiliationComponent));
+		if (!affiliation)
+			return;
+
+		ApplyPerceivedFactionForAI(entity, affiliation.GetPerceivedFaction());
+
+		state.m_bBroken = false;
+		state.m_fRestoredTime = GetGame().GetWorld().GetWorldTime();
+
+		Print(string.Format("[ARGA_Incognito] Restored playerId=%1", state.m_iPlayerId), LogLevel.NORMAL);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Shooting trigger. OnProjectileShot fires on the weapon's owner entity; playerID identifies which
+	//! watched state (if any) fired.
+	protected void OnWeaponFired(int playerID, BaseWeaponComponent weapon, IEntity entity)
+	{
+		ARGA_IncognitoState state = m_mStates.Get(playerID);
+		if (!state || state.m_bBroken || !state.m_Entity)
+			return;
+
+		SCR_CharacterFactionAffiliationComponent affiliation = SCR_CharacterFactionAffiliationComponent.Cast(state.m_Entity.FindComponent(SCR_CharacterFactionAffiliationComponent));
+		if (!affiliation || !IsDisguised(affiliation))
+			return;
+
+		Faction realFaction = affiliation.GetAffiliatedFaction();
+		Faction outfitFaction = affiliation.GetPerceivedFaction();
+
+		array<IEntity> aiEntities = {};
+		CollectAIEntities(aiEntities);
+
+		vector playerPos = state.m_Entity.GetOrigin();
+
+		IEntity witness = FindObserverInRange(aiEntities, state.m_Entity, playerPos, m_fShotRadius, realFaction, outfitFaction, requireSight: true);
+		if (witness)
+			Break(state, "shot", witness);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Kill trigger. Fires for every controllable death; only the killer's watched state (if any) matters.
+	protected void OnControllableDestroyed(notnull SCR_InstigatorContextData instigatorContextData)
+	{
+		int killerId = instigatorContextData.GetKillerPlayerID();
+		if (killerId <= 0)
+			return;
+
+		ARGA_IncognitoState state = m_mStates.Get(killerId);
+		if (!state || state.m_bBroken || !state.m_Entity)
+			return;
+
+		SCR_CharacterFactionAffiliationComponent affiliation = SCR_CharacterFactionAffiliationComponent.Cast(state.m_Entity.FindComponent(SCR_CharacterFactionAffiliationComponent));
+		if (!affiliation || !IsDisguised(affiliation))
+			return;
+
+		Faction realFaction = affiliation.GetAffiliatedFaction();
+		Faction outfitFaction = affiliation.GetPerceivedFaction();
+
+		array<IEntity> aiEntities = {};
+		CollectAIEntities(aiEntities);
+
+		vector playerPos = state.m_Entity.GetOrigin();
+
+		IEntity witness = FindObserverInRange(aiEntities, state.m_Entity, playerPos, m_fWitnessRadius, realFaction, outfitFaction, requireSight: true, exclude: instigatorContextData.GetVictimEntity());
+		if (witness)
+			Break(state, "kill", witness);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Server poll: evaluates the aiming, sprinting, voice and proximity triggers, and drives recovery.
+	//! Collects the AI list once and shares it across every watched player.
+	//! Diagnostics only: tracks what the nearest hunter perceives, tick by tick, so trace and exposure can
+	//! be watched against real cover instead of only at the instant of a break. Prints on change.
+	protected void LogClosestHunter(ARGA_IncognitoState state, IEntity entity, Faction realFaction, array<IEntity> aiEntities)
+	{
+		IEntity hunter = FindClosestHunter(aiEntities, entity, m_fWitnessRadius, realFaction);
+		if (!hunter)
+			return;
+
+		PerceptionComponent perception = PerceptionComponent.Cast(hunter.FindComponent(PerceptionComponent));
+		if (!perception)
+			return;
+
+		BaseTarget target = perception.FindTargetPerceptionObject(entity);
+		if (!target)
+			return;
+
+		bool sees = Sees(hunter, entity);
+
+		// Deduped on visibility plus a 5 m distance bucket, so the log follows the player's approach
+		// without printing every tick.
+		string key = string.Format("%1 %2 %3 %4 %5",
+			typename.EnumToString(ETargetCategory, target.GetTargetCategory()),
+			target.GetTraceFraction(),
+			target.GetExposure(),
+			sees,
+			Math.Round(vector.Distance(entity.GetOrigin(), hunter.GetOrigin()) / 5));
+
+		if (key == state.m_sLastPerception)
+			return;
+
+		state.m_sLastPerception = key;
+		Print(string.Format("[ARGA_Incognito][Debug] Watch sees=%1 why=%2 playerPos=%3 %4", sees, m_sLastSeeFail, entity.GetOrigin(), DescribePerception(hunter, entity)), LogLevel.NORMAL);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	protected void Tick()
+	{
+		m_iTraceCount = 0;
+		m_iFovRejects = 0;
+
+		array<IEntity> aiEntities = {};
+		CollectAIEntities(aiEntities);
+
+		foreach (int playerId, ARGA_IncognitoState state : m_mStates)
+		{
+			SyncWatchedEntity(state);
+
+			IEntity entity = state.m_Entity;
+			if (!entity)
+				continue;
+
+			SCR_ChimeraCharacter character = SCR_ChimeraCharacter.Cast(entity);
+			if (!character)
+				continue;
+
+			CharacterControllerComponent controller = character.GetCharacterController();
+			if (!controller || controller.IsDead())
+				continue;
+
+			SCR_CharacterFactionAffiliationComponent affiliation = SCR_CharacterFactionAffiliationComponent.Cast(entity.FindComponent(SCR_CharacterFactionAffiliationComponent));
+			if (!affiliation)
+				continue;
+
+			Faction realFaction = affiliation.GetAffiliatedFaction();
+
+			if (state.m_bBroken)
+			{
+				TickRecovery(state, entity, realFaction, aiEntities);
+				continue;
+			}
+
+			if (!IsDisguised(affiliation))
+				continue;
+
+			if (m_bDebugLog)
+				LogClosestHunter(state, entity, realFaction, aiEntities);
+
+			EvaluateBreakRules(state, entity, controller, affiliation, aiEntities);
+		}
+
+		if (m_bDebugLog && (m_iTraceCount > 0 || m_iFovRejects > 0))
+			Print(string.Format("[ARGA_Incognito][Debug] Tick traces=%1 fovRejects=%2 ai=%3", m_iTraceCount, m_iFovRejects, aiEntities.Count()), LogLevel.NORMAL);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! CharacterControllerComponent.IsSprinting() is not replicated to a dedicated server: it reads false
+	//! there for every remote player, however fast they run. GetMovementSpeed() is.
+	protected bool IsSprinting(CharacterControllerComponent controller)
+	{
+		return controller.IsSprinting() || controller.GetMovementSpeed() >= SPRINT_MOVEMENT_SPEED;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Diagnostics only: compares the three ways of telling that a player is running, to find which one
+	//! survives replication on a dedicated server. Speed is measured from replicated positions, which is
+	//! the only one that cannot be local-side state. Prints when the measured speed changes by 1 m/s.
+	protected void LogSpeed(ARGA_IncognitoState state, IEntity entity, CharacterControllerComponent controller, bool sprinting)
+	{
+		vector pos = entity.GetOrigin();
+		float now = GetGame().GetWorld().GetWorldTime();
+		float elapsed = (now - state.m_fLastPosTime) * 0.001;
+
+		float measured;
+		if (state.m_fLastPosTime > 0 && elapsed > 0)
+			measured = vector.Distance(pos, state.m_vLastPos) / elapsed;
+
+		state.m_vLastPos = pos;
+		state.m_fLastPosTime = now;
+
+		int bucket = Math.Round(measured);
+		if (bucket == state.m_iLastSpeedBucket)
+			return;
+
+		state.m_iLastSpeedBucket = bucket;
+		Print(string.Format("[ARGA_Incognito][Debug] Speed playerId=%1 measured=%2 movementSpeed=%3 sprinting=%4 stance=%5",
+			state.m_iPlayerId,
+			measured,
+			controller.GetMovementSpeed(),
+			sprinting,
+			controller.GetStance()), LogLevel.NORMAL);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! One pass over the AI list per player, instead of one per rule. Distance and IsObserver are paid
+	//! once per AI, and so is the sight ray. Rules are ordered cheapest-condition first; the first AI
+	//! that satisfies any of them breaks the disguise and ends the pass.
+	protected void EvaluateBreakRules(ARGA_IncognitoState state, IEntity entity, CharacterControllerComponent controller, SCR_CharacterFactionAffiliationComponent affiliation, array<IEntity> aiEntities)
+	{
+		float aimRadius;
+		if (controller.IsWeaponRaised() || controller.IsWeaponADS())
+			aimRadius = m_fAimRadius;
+
+		bool sprinting = IsSprinting(controller);
+
+		if (m_bDebugLog)
+			LogSpeed(state, entity, controller, sprinting);
+
+		float sprintRadius;
+		if (sprinting)
+			sprintRadius = m_fSprintRadius;
+
+		float voiceRadius;
+		if (SpokeSinceLastTick(state))
+			voiceRadius = state.m_fVoiceRadius;
+
+		float maxRadius = Math.Max(Math.Max(aimRadius, sprintRadius), Math.Max(voiceRadius, m_fProximityRadius));
+		if (maxRadius <= 0)
+			return;
+
+		Faction realFaction = affiliation.GetAffiliatedFaction();
+		Faction outfitFaction = affiliation.GetPerceivedFaction();
+		vector playerPos = entity.GetOrigin();
+
+		foreach (IEntity aiEntity : aiEntities)
+		{
+			float distance = vector.Distance(playerPos, aiEntity.GetOrigin());
+			if (distance > maxRadius)
+				continue;
+
+			if (!IsObserver(aiEntity, entity, realFaction, outfitFaction))
+				continue;
+
+			// Voice carries through walls, so it is resolved before spending the ray.
+			if (voiceRadius > 0 && distance <= voiceRadius)
+			{
+				Break(state, "voice", aiEntity);
+				return;
+			}
+
+			if (!Sees(aiEntity, entity))
+				continue;
+
+			if (aimRadius > 0 && distance <= aimRadius)
+			{
+				Break(state, "aiming", aiEntity);
+				return;
+			}
+
+			if (sprintRadius > 0 && distance <= sprintRadius)
+			{
+				Break(state, "sprinting", aiEntity);
+				return;
+			}
+
+			if (m_fProximityRadius > 0 && distance <= m_fProximityRadius)
+			{
+				Break(state, "proximity", aiEntity);
+				return;
+			}
+		}
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! While broken: keeps the override null, refreshes the last-seen timer, and restores once unseen.
+	protected void TickRecovery(ARGA_IncognitoState state, IEntity entity, Faction realFaction, array<IEntity> aiEntities)
+	{
+		PerceivableComponent perceivable = PerceivableComponent.Cast(entity.FindComponent(PerceivableComponent));
+		if (!perceivable)
+			return;
+
+		if (perceivable.GetPerceivedFactionOverride())
+			perceivable.SetPerceivedFactionOverride(null);
+
+		if (HasHunterInRange(aiEntities, entity, m_fWitnessRadius, realFaction))
+		{
+			state.m_fLastSeenTime = GetGame().GetWorld().GetWorldTime();
+			return;
+		}
+
+		float elapsedSeconds = (GetGame().GetWorld().GetWorldTime() - state.m_fLastSeenTime) * 0.001;
+		if (elapsedSeconds < m_fRecoverySeconds)
+			return;
+
+		if (m_bDebugLog)
+		{
+			IEntity closest = FindClosestHunter(aiEntities, entity, m_fWitnessRadius, realFaction);
+			if (closest)
+				Print(string.Format("[ARGA_Incognito][Debug] Restore closest hunter %1", DescribePerception(closest, entity)), LogLevel.NORMAL);
+			else
+				Print("[ARGA_Incognito][Debug] Restore: no hunter within witness radius", LogLevel.NORMAL);
+		}
+
+		Restore(state);
+	}
+}
