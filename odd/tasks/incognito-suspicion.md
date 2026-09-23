@@ -205,6 +205,11 @@ Strategy: ask-on-risk. Branch `feat/incognito-component`.
   (aim direction, closest AI to the aim line, cosine, distance, chest clear) and `threat=` on every
   break witness.
 
+- Diagnostic run (same log, from 14:18): 17 shots at FIA 14:19:08-21 all `target=2` with the right
+  FIA soldier, no suspicion, no break (third-party shooting verified). Sprint break at 14:19:30 with
+  witness `threat=1` (VIGILANT): the USSR had heard the shots but FIA never engaged them, so they
+  never reached ALERTED. User decision: the combat context now starts at VIGILANT.
+
 ## Next step
-Repeat run B with the new diagnostics.
+Repeat run B: running near USSR who have heard gunfire, aiming at and killing FIA.
 Delivery (push / PR) is the user's decision.

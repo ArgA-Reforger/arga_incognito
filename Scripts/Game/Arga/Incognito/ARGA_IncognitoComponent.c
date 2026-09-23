@@ -750,11 +750,11 @@ class ARGA_IncognitoComponent : ScriptComponent
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! True while the AI's own threat assessment says it is fighting: in a firefight, running and
-	//! shooting at nothing in particular is what everyone does.
+	//! True from VIGILANT up, i.e. once the AI has heard gunfire or is fighting: with shots around,
+	//! running and shooting at nothing in particular is what everyone does.
 	protected bool IsInCombat(IEntity aiEntity)
 	{
-		return ThreatStateOf(aiEntity) >= EAIThreatState.ALERTED;
+		return ThreatStateOf(aiEntity) >= EAIThreatState.VIGILANT;
 	}
 
 	//------------------------------------------------------------------------------------------------
