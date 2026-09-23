@@ -6,6 +6,7 @@ GenericEntity ARGA_Incognito {
    m_fReinforcementDistance 150
    m_fReinforcementDespawnSeconds 30
    m_fReinforcementReuseRadius 50
+   m_bDebugLog 1
   }
  }
  coords 1891.659 11.5 1829.161
