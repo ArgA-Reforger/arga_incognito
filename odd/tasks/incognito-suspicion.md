@@ -43,6 +43,12 @@ is never wired to any entity, rebuilt on top of our server-authoritative, dedica
       12/09 checks (sprint, aim, proximity, voice).
 - [x] T1 - Suspicion meter: instant-break vs accumulating rules, decay, recovery threshold.
 - [x] T2 - Reinforcements: spawn at distance and bearing, move to break point.
+- [ ] T4 - Target-aware shot and kill rules (decided 2026-09-23, not started): attacking a faction
+      that is an enemy of both the player and the disguise faction neither breaks nor adds
+      suspicion. Kill breaks only if the victim is not an enemy of the outfit faction. Shot: trace
+      along the weapon aim when firing; aimed at a non-enemy of the outfit -> break, even on a miss;
+      aimed at an enemy of the outfit -> nothing; aimed at nothing -> adds suspicion. Proposed:
+      aiming at an enemy of the outfit adds no suspicion either.
 - [x] T3 - Reinforcements: timed despawn out of sight, reuse radius, group cap.
 
 ## TDD
