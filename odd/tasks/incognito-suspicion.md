@@ -41,7 +41,7 @@ is never wired to any entity, rebuilt on top of our server-authoritative, dedica
       `ARGA_IncognitoComponent`, with no behaviour change. Rename classes and log tag only.
 - [x] T0b - Prefab / world entity that hosts the component, and a dedicated-server re-run of the
       12/09 checks (sprint, aim, proximity, voice).
-- [ ] T1 - Suspicion meter: instant-break vs accumulating rules, decay, recovery threshold.
+- [x] T1 - Suspicion meter: instant-break vs accumulating rules, decay, recovery threshold.
 - [ ] T2 - Reinforcements: spawn at distance and bearing, move to break point.
 - [ ] T3 - Reinforcements: timed despawn out of sight, reuse radius, group cap.
 
@@ -86,5 +86,15 @@ Strategy: ask-on-risk. Branch `feat/incognito-component`.
   Behaviour note: the sight rules no longer stop at the first observer, so every observer in range
   and cone costs a ray.
 
+- T1 test (log `logs_2026-09-23_11-37-48`, two runs): short sprint rose to 28.5 without breaking and
+  decayed at 2.5/s; continuous sprint broke in ~3.5 s (`suspicion:sprinting`, witness 36 m); aiming
+  broke in ~3 s (`suspicion:aiming`, 21.6 m); proximity broke in ~6 s (`suspicion:proximity`, 3.3 m);
+  while broken suspicion held when seen, then decayed 100 -> 25 in ~30 s and `Restored` fired twice.
+  Voice run: ranges resolved 5 / 30 / 68 m; whisper and normal did not break (enemies ~60 m away),
+  loud broke at once (`reason=voice`, 61.2 m). No script errors from the addon.
+  Test-world fix: the first run spawned vanilla `Character_USSR_Rifleman_Variant_1.et`, because
+  `SCR_PlayerLoadout` picks a random editable-entity variant (`SCR_PlayerLoadout.c:16`) and the
+  prefab inherited the rifleman's variant list. The inherited variant now points at the prefab itself.
+
 ## Next step
-T1: manual test in the test world; the agent reads the log.
+T2: reinforcements spawn.
