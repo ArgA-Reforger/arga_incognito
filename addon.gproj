@@ -1,0 +1,22 @@
+GameProject {
+ ID "ArgaIncognito"
+ GUID "6A676346D201F8E9"
+ TITLE "Arga Incognito"
+ Dependencies {
+  "65BD32CC8FC68395" "58D0FB3206B6F859"
+ }
+ Configurations {
+  GameProjectConfig PC {
+  }
+  GameProjectConfig XBOX_ONE {
+  }
+  GameProjectConfig XBOX_SERIES {
+  }
+  GameProjectConfig PS4 {
+  }
+  GameProjectConfig PS5 {
+  }
+  GameProjectConfig HEADLESS {
+  }
+ }
+}
