@@ -124,5 +124,15 @@ Strategy: ask-on-risk. Branch `feat/incognito-component`.
   restore the group was still alive at 12:14:06, 35 s later, when the next break re-tasked it.
   Cap scenario (two groups, then a third break) NOT tested. No addon errors.
 
+- Native review: `addon.gproj` committed (`37c6b82`); review started with untracked `Missions/` and
+  `thumbnail.png` excluded, consent granted by the user, one lens (reliability), APPROVED and
+  acknowledged (lineage `review-f327a0bd98064a66`, authority burned). Four non-blocking warnings:
+  1. Voice radius cached by VON component class, not by .acp; a failed lookup caches 0 for good.
+  2. `OnDelete` does not unsubscribe the game-mode / controller / shot handlers and leaves tracked
+     reinforcement groups orphaned if the host entity is deleted.
+  3. Cap branch never exercised.
+  4. Shot and kill breaks not observed since `Break` gained suspicion and reinforcements.
+
 ## Next step
-Feature complete except the untested cap scenario. Delivery (push / PR) is the user's decision.
+Decide on the review warnings (2 is a small code fix; 3 and 4 need one manual run). Delivery
+(push / PR) is the user's decision.
