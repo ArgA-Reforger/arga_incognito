@@ -240,7 +240,16 @@ Strategy: ask-on-risk. Branch `feat/incognito-component`.
   window closed, standing 4.5 m from a calm USSR (`threat=0`) broke by `suspicion:proximity`, as
   designed out of combat. T4 closed.
 
+- Second native review (lineage `review-ad4133a167ee9e9e`, 37c6b82..2415456, reliability lens):
+  APPROVED and acknowledged. Five non-blocking warnings:
+  1. Test layer had two properties on one line after an edit (fixed).
+  2. Remote-player aim direction on a dedicated server unverified (all runs were Workbench).
+  3. The delayed victim check does not require the victim to be hostile to the player's real faction.
+  4. Default cap changed 2 -> 1 silently (no mission uses this addon yet, so no impact today).
+  5. Several branches proven only by reading (kill of an outfit enemy, one-shot facing victim, cap,
+     OnDelete beyond one Play stop).
+
 ## Next step
-Feature complete. Remaining: native review of the commits after the approved review, turning off the
-test-layer debug log, and delivery (push / PR), which is the user's decision.
+Decide on warning 3; dedicated-server run for warning 2; turn off the test-layer debug log;
+delivery (push / PR) is the user's decision.
 Delivery (push / PR) is the user's decision.
