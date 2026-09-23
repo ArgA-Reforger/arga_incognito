@@ -210,6 +210,16 @@ Strategy: ask-on-risk. Branch `feat/incognito-component`.
   witness `threat=1` (VIGILANT): the USSR had heard the shots but FIA never engaged them, so they
   never reached ALERTED. User decision: the combat context now starts at VIGILANT.
 
+- Run B (same log, from 14:22): 25 shots at FIA all `target=2`, no suspicion. Sprint then broke at
+  14:23:21 with a witness at `threat=0` (SAFE) 35 s after the exchange, while FIA was shooting at the
+  player (user). The USSR do not react to the player's fire (he looks friendly), and whether they
+  heard FIA and calmed down again is not observable.
+- Own-combat window (user decision): shooting at an outfit enemy, or an alive outfit enemy within the
+  witness radius holding the player as an `ETargetCategory.ENEMY` perception target, opens a window
+  (`m_fOwnCombatSeconds`, 30 s) in which sprinting and stray shots add no suspicion. Aiming at or
+  shooting the outfit's own side is unaffected. Being engaged is read from the enemy's perception,
+  not from actual shots or damage.
+
 ## Next step
-Repeat run B: running near USSR who have heard gunfire, aiming at and killing FIA.
+Repeat run B.
 Delivery (push / PR) is the user's decision.

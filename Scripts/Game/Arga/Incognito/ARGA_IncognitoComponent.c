@@ -31,6 +31,7 @@ class ARGA_IncognitoState
 	int m_iLastSpeedBucket;
 	float m_fSuspicion;
 	int m_iLastSuspicionBucket;
+	float m_fCombatUntil;
 }
 
 class ARGA_IncognitoReinforcement
@@ -75,6 +76,9 @@ class ARGA_IncognitoComponent : ScriptComponent
 
 	[Attribute("30", UIWidgets.Slider, "Sospecha que suma cada disparo visto que no apunta a nadie, por ejemplo al aire o a una pared.", params: "0 100 1", category: "Suspicion")]
 	protected float m_fStrayShotSuspicion;
+
+	[Attribute("30", UIWidgets.Slider, "Segundos que el jugador cuenta como en combate despues de disparar a un enemigo del disfraz o de ser identificado como enemigo por uno. En ese tiempo esprintar y disparar a la nada no suman sospecha.", params: "0 300 1", category: "Suspicion")]
+	protected float m_fOwnCombatSeconds;
 
 	[Attribute("2.5", UIWidgets.Slider, "Sospecha que baja por segundo mientras el jugador no hace nada sospechoso. Se duplica si no hay IA hostil dentro del radio de testigos.", params: "0 50 0.1", category: "Suspicion")]
 	protected float m_fSuspicionDecayRate;
@@ -385,6 +389,7 @@ class ARGA_IncognitoComponent : ScriptComponent
 		state.m_fRestoredTime = 0;
 		state.m_fSuspicion = 0;
 		state.m_iLastSuspicionBucket = 0;
+		state.m_fCombatUntil = 0;
 
 		if (!current)
 			return;
@@ -755,6 +760,57 @@ class ARGA_IncognitoComponent : ScriptComponent
 	protected bool IsInCombat(IEntity aiEntity)
 	{
 		return ThreatStateOf(aiEntity) >= EAIThreatState.VIGILANT;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Opens, or extends, the window in which the player counts as fighting a common enemy.
+	protected void EnterOwnCombat(ARGA_IncognitoState state, string cause)
+	{
+		float now = GetGame().GetWorld().GetWorldTime();
+
+		if (m_bDebugLog && now >= state.m_fCombatUntil)
+			Print(string.Format("[ARGA_Incognito][Debug] Own combat playerId=%1 cause=%2", state.m_iPlayerId, cause), LogLevel.NORMAL);
+
+		state.m_fCombatUntil = now + m_fOwnCombatSeconds * 1000;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	protected bool IsInOwnCombat(ARGA_IncognitoState state)
+	{
+		return GetGame().GetWorld().GetWorldTime() < state.m_fCombatUntil;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! True when an alive enemy of the outfit within the witness radius holds the player as an ENEMY
+	//! target in its own perception, i.e. is fighting him. Distance first, perception last.
+	protected bool IsEngagedByOutfitEnemy(IEntity player, Faction outfitFaction, array<IEntity> aiEntities)
+	{
+		vector playerPos = player.GetOrigin();
+
+		foreach (IEntity aiEntity : aiEntities)
+		{
+			if (aiEntity == player)
+				continue;
+
+			if (vector.Distance(playerPos, aiEntity.GetOrigin()) > m_fWitnessRadius)
+				continue;
+
+			if (ClassifyTarget(aiEntity, outfitFaction) != TARGET_OUTFIT_ENEMY)
+				continue;
+
+			if (!IsAliveCharacter(aiEntity))
+				continue;
+
+			PerceptionComponent perception = PerceptionComponent.Cast(aiEntity.FindComponent(PerceptionComponent));
+			if (!perception)
+				continue;
+
+			BaseTarget target = perception.FindTargetPerceptionObject(player);
+			if (target && target.GetTargetCategory() == ETargetCategory.ENEMY)
+				return true;
+		}
+
+		return false;
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -1296,7 +1352,10 @@ class ARGA_IncognitoComponent : ScriptComponent
 
 		// Shooting at an enemy of the outfit is what that faction would do itself.
 		if (target == TARGET_OUTFIT_ENEMY)
+		{
+			EnterOwnCombat(state, "shot at outfit enemy");
 			return;
+		}
 
 		vector playerPos = state.m_Entity.GetOrigin();
 
@@ -1317,6 +1376,9 @@ class ARGA_IncognitoComponent : ScriptComponent
 
 			return;
 		}
+
+		if (IsInOwnCombat(state))
+			return;
 
 		// Only an observer who is not fighting himself finds a stray shot odd.
 		IEntity calmWitness = FindObserverInRange(aiEntities, state.m_Entity, playerPos, m_fShotRadius, realFaction, outfitFaction, requireSight: true, requireCalm: true);
@@ -1526,8 +1588,12 @@ class ARGA_IncognitoComponent : ScriptComponent
 		if (m_bDebugLog)
 			LogSpeed(state, entity, controller, sprinting);
 
+		if (IsEngagedByOutfitEnemy(entity, affiliation.GetPerceivedFaction(), aiEntities))
+			EnterOwnCombat(state, "engaged by outfit enemy");
+
+		// A player trading fire with a common enemy runs like everyone else.
 		float sprintRadius;
-		if (sprinting)
+		if (sprinting && !IsInOwnCombat(state))
 			sprintRadius = m_fSprintRadius;
 
 		float voiceRadius;
