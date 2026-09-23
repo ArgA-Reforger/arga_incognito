@@ -156,6 +156,17 @@ Strategy: ask-on-risk. Branch `feat/incognito-component`.
   spawn as the third party (no friendly-faction lists found in the vanilla or ArgA faction configs,
   so every pair of factions is hostile).
 
+- T4 run A (log `logs_2026-09-23_12-43-26`, FIA moved ~1.4 km away): stray shots 30 -> 58 -> 86 ->
+  100 and `suspicion:stray shot`; aiming at USSR broke twice in ~2.5 s; re-task at 42.6 m; shots at
+  USSR broke at 12:50:13 and 12:51:45 (`target=1`); every stray shot was `aimed=NULL` and every shot
+  at USSR picked the right soldier; Play stopped at 12:53 with a live group and no addon errors
+  (warning 2 closed). Gap found: from 12:49:56 to 12:50:13 about 20 shots at one USSR broke nothing,
+  because the victim was not facing the player and no other observer saw it; the victim then stopped
+  moving (likely knocked unconscious, ACE medical). Kill break and the cap were not exercised.
+- Fix (user decision): a shot's victim counts as witness when, 500 ms after the shot, he is still
+  `ECharacterLifeState.ALIVE` (neither unconscious nor dead) and within the shot radius. Reason
+  `shot:victim`.
+
 ## Next step
-One manual run covering T4, the cap (warning 3), shot and kill breaks (warning 4) and a clean Play
-stop (warning 2). Delivery (push / PR) is the user's decision.
+Run A2 (FIA still far): victim witness, kill break, cap. Run B (FIA near USSR): third-party rules.
+Delivery (push / PR) is the user's decision.

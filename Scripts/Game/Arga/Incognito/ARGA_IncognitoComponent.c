@@ -132,6 +132,9 @@ class ARGA_IncognitoComponent : ScriptComponent
 	//! cos(5 deg): how close to the weapon's aim line a character must be to count as the one aimed at.
 	protected const float AIM_TARGET_MIN_DOT = 0.996;
 
+	//! Delay before judging a shot's victim, so the bullet has landed and a hit that took him out is known.
+	protected const int VICTIM_CHECK_MS = 500;
+
 	protected const int TARGET_NONE = 0;
 	protected const int TARGET_DISGUISE_SIDE = 1;
 	protected const int TARGET_OUTFIT_ENEMY = 2;
@@ -209,6 +212,7 @@ class ARGA_IncognitoComponent : ScriptComponent
 			s_Instance = null;
 
 		GetGame().GetCallqueue().Remove(Tick);
+		GetGame().GetCallqueue().Remove(CheckVictimWitness);
 
 		SCR_BaseGameMode gameMode = SCR_BaseGameMode.Cast(GetGame().GetGameMode());
 		if (gameMode)
@@ -1190,16 +1194,43 @@ class ARGA_IncognitoComponent : ScriptComponent
 		vector playerPos = state.m_Entity.GetOrigin();
 
 		IEntity witness = FindObserverInRange(aiEntities, state.m_Entity, playerPos, m_fShotRadius, realFaction, outfitFaction, requireSight: true);
-		if (!witness)
-			return;
 
 		if (target == TARGET_DISGUISE_SIDE)
 		{
-			Break(state, "shot", witness);
+			if (witness)
+			{
+				Break(state, "shot", witness);
+				return;
+			}
+
+			// The victim knows where the shot came from even without looking, unless it took him out.
+			if (vector.Distance(playerPos, aimed.GetOrigin()) <= m_fShotRadius)
+				GetGame().GetCallqueue().CallLater(CheckVictimWitness, VICTIM_CHECK_MS, false, state.m_iPlayerId, aimed);
+
 			return;
 		}
 
-		RaiseSuspicion(state, m_fStrayShotSuspicion, "stray shot", witness);
+		if (witness)
+			RaiseSuspicion(state, m_fStrayShotSuspicion, "stray shot", witness);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Runs once the shot has landed: a victim still conscious gives the shooter away.
+	protected void CheckVictimWitness(int playerId, IEntity victim)
+	{
+		ARGA_IncognitoState state = m_mStates.Get(playerId);
+		if (!state || state.m_bBroken || !state.m_Entity || !victim)
+			return;
+
+		SCR_ChimeraCharacter character = SCR_ChimeraCharacter.Cast(victim);
+		if (!character)
+			return;
+
+		CharacterControllerComponent controller = character.GetCharacterController();
+		if (!controller || controller.GetLifeState() != ECharacterLifeState.ALIVE)
+			return;
+
+		Break(state, "shot:victim", victim);
 	}
 
 	//------------------------------------------------------------------------------------------------
