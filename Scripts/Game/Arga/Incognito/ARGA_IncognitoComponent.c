@@ -6,11 +6,13 @@ class ARGA_IncognitoComponentClass : ScriptComponentClass
 //! Initializes the vanilla perceived-faction (disguise) system under game modes that bypass the vanilla
 //! spawn pipeline, where its own spawn hook never runs. Server only.
 //!
-//! Disguise break (global, faction-agnostic): a disguised player who shoots, aims, sprints, stands too
-//! close, talks, or kills in front of an "observer" (an enemy-of-his-real-faction AI that is not
-//! enemy-of-his-outfit) has his AI override cleared. Restored once no "hunter" (enemy-of-his-real-faction
-//! AI) has seen him for m_fRecoverySeconds. Voice is the only rule that does not require line of sight,
-//! and its radius comes from the VON component the player transmits through.
+//! Disguise break (global, faction-agnostic): shooting, killing or talking near an "observer" (an
+//! enemy-of-his-real-faction AI that is not enemy-of-his-outfit) clears the player's AI override at once.
+//! Aiming, sprinting or standing too close in an observer's sight only raise a server-side suspicion
+//! level, and the disguise breaks when it reaches MAX_SUSPICION. Suspicion decays while he does nothing
+//! suspicious; once broken, it decays only while no "hunter" (enemy-of-his-real-faction AI) sees him, and
+//! the disguise is restored at m_fRestoreThreshold. Voice is the only rule that does not require line of
+//! sight, and its radius comes from the VON component the player transmits through.
 class ARGA_IncognitoState
 {
 	int m_iPlayerId;
@@ -26,6 +28,8 @@ class ARGA_IncognitoState
 	vector m_vLastPos;
 	float m_fLastPosTime;
 	int m_iLastSpeedBucket;
+	float m_fSuspicion;
+	int m_iLastSuspicionBucket;
 }
 
 class ARGA_IncognitoComponent : ScriptComponent
@@ -33,13 +37,13 @@ class ARGA_IncognitoComponent : ScriptComponent
 	[Attribute("75", UIWidgets.Slider, "Radio en metros: un observador dentro que ve al jugador cuando dispara rompe el disfraz. 0 desactiva este disparador.", params: "0 500 1", category: "Disguise Break")]
 	protected float m_fShotRadius;
 
-	[Attribute("50", UIWidgets.Slider, "Radio en metros: un observador que ve al jugador apuntando o en ADS rompe el disfraz. 0 desactiva este disparador.", params: "0 200 1", category: "Disguise Break")]
+	[Attribute("50", UIWidgets.Slider, "Radio en metros: un observador que ve al jugador apuntando o en ADS suma sospecha. 0 desactiva este disparador.", params: "0 200 1", category: "Disguise Break")]
 	protected float m_fAimRadius;
 
-	[Attribute("100", UIWidgets.Slider, "Radio en metros: un observador que ve al jugador esprintando rompe el disfraz. 0 desactiva este disparador.", params: "0 500 1", category: "Disguise Break")]
+	[Attribute("100", UIWidgets.Slider, "Radio en metros: un observador que ve al jugador esprintando suma sospecha. 0 desactiva este disparador.", params: "0 500 1", category: "Disguise Break")]
 	protected float m_fSprintRadius;
 
-	[Attribute("10", UIWidgets.Slider, "Radio en metros: un observador dentro que ve al jugador rompe el disfraz por cercania. 0 desactiva este disparador.", params: "0 100 1", category: "Disguise Break")]
+	[Attribute("10", UIWidgets.Slider, "Radio en metros: un observador dentro que ve al jugador suma sospecha por cercania. 0 desactiva este disparador.", params: "0 100 1", category: "Disguise Break")]
 	protected float m_fProximityRadius;
 
 	[Attribute("200", UIWidgets.Slider, "Radio en metros para testigos que deben ver al jugador cuando mata. Tambien se usa para detectar cazadores durante la recuperacion. 0 desactiva estos usos.", params: "0 500 1", category: "Disguise Break")]
@@ -48,8 +52,20 @@ class ARGA_IncognitoComponent : ScriptComponent
 	[Attribute("1", UIWidgets.CheckBox, "Hablar por voz directa rompe el disfraz si un enemigo esta dentro del alcance de la voz. El alcance NO se configura aca: sale del propio mod de voz.", category: "Disguise Break")]
 	protected bool m_bVoiceBreak;
 
-	[Attribute("30", UIWidgets.Slider, "Tiempo en segundos sin ser visto por un enemigo real para recuperar el disfraz tras romperse.", params: "0 300 1", category: "Disguise Break")]
-	protected float m_fRecoverySeconds;
+	[Attribute("40", UIWidgets.Slider, "Sospecha por segundo mientras un observador ve al jugador esprintando. Suma la mitad en el borde del radio.", params: "0 200 1", category: "Suspicion")]
+	protected float m_fSprintSuspicionRate;
+
+	[Attribute("50", UIWidgets.Slider, "Sospecha por segundo mientras un observador ve al jugador apuntando o con el arma en alto. Suma la mitad en el borde del radio.", params: "0 200 1", category: "Suspicion")]
+	protected float m_fAimSuspicionRate;
+
+	[Attribute("25", UIWidgets.Slider, "Sospecha por segundo mientras un observador ve al jugador dentro del radio de cercania. Suma la mitad en el borde del radio.", params: "0 200 1", category: "Suspicion")]
+	protected float m_fProximitySuspicionRate;
+
+	[Attribute("2.5", UIWidgets.Slider, "Sospecha que baja por segundo mientras el jugador no hace nada sospechoso. Se duplica si no hay IA hostil dentro del radio de testigos.", params: "0 50 0.1", category: "Suspicion")]
+	protected float m_fSuspicionDecayRate;
+
+	[Attribute("25", UIWidgets.Slider, "Con el disfraz roto, se recupera cuando la sospecha baja a este valor.", params: "0 99 1", category: "Suspicion")]
+	protected float m_fRestoreThreshold;
 
 	[Attribute("0", UIWidgets.CheckBox, "Diagnostico: imprime en el log que percibia la IA en cada ruptura y en cada recuperacion del disfraz.", category: "Disguise Break")]
 	protected bool m_bDebugLog;
@@ -65,6 +81,8 @@ class ARGA_IncognitoComponent : ScriptComponent
 	//! GetMovementSpeed() slides continuously up to 2 as the player wheels from walk to run, and jumps to
 	//! a fixed 3 on sprint. Measured on a dedicated server: run peaked at 1.98, sprint held exactly 3.
 	protected const float SPRINT_MOVEMENT_SPEED = 2.5;
+
+	protected const float MAX_SUSPICION = 100;
 
 	//! Reused instead of allocated per trace, as vanilla does in its own AI trace nodes.
 	protected ref TraceParam m_TraceParam = new TraceParam();
@@ -281,6 +299,8 @@ class ARGA_IncognitoComponent : ScriptComponent
 		state.m_bBroken = false;
 		state.m_fLastSeenTime = 0;
 		state.m_fRestoredTime = 0;
+		state.m_fSuspicion = 0;
+		state.m_iLastSuspicionBucket = 0;
 
 		if (!current)
 			return;
@@ -672,6 +692,7 @@ class ARGA_IncognitoComponent : ScriptComponent
 
 		state.m_bBroken = true;
 		state.m_fLastSeenTime = GetGame().GetWorld().GetWorldTime();
+		SetSuspicion(state, MAX_SUSPICION);
 
 		Print(string.Format("[ARGA_Incognito] Broken playerId=%1 reason=%2", state.m_iPlayerId, reason), LogLevel.NORMAL);
 	}
@@ -831,7 +852,8 @@ class ARGA_IncognitoComponent : ScriptComponent
 			if (m_bDebugLog)
 				LogClosestHunter(state, entity, realFaction, aiEntities);
 
-			EvaluateBreakRules(state, entity, controller, affiliation, aiEntities);
+			if (!EvaluateBreakRules(state, entity, controller, affiliation, aiEntities))
+				DecaySuspicion(state, entity, realFaction, aiEntities);
 		}
 
 		if (m_bDebugLog && (m_iTraceCount > 0 || m_iFovRejects > 0))
@@ -878,9 +900,9 @@ class ARGA_IncognitoComponent : ScriptComponent
 
 	//------------------------------------------------------------------------------------------------
 	//! One pass over the AI list per player, instead of one per rule. Distance and IsObserver are paid
-	//! once per AI, and so is the sight ray. Rules are ordered cheapest-condition first; the first AI
-	//! that satisfies any of them breaks the disguise and ends the pass.
-	protected void EvaluateBreakRules(ARGA_IncognitoState state, IEntity entity, CharacterControllerComponent controller, SCR_CharacterFactionAffiliationComponent affiliation, array<IEntity> aiEntities)
+	//! once per AI, and so is the sight ray. Voice breaks at once and ends the pass; the sight rules keep
+	//! the strongest observer per rule and add up. Returns true when suspicion was raised this tick.
+	protected bool EvaluateBreakRules(ARGA_IncognitoState state, IEntity entity, CharacterControllerComponent controller, SCR_CharacterFactionAffiliationComponent affiliation, array<IEntity> aiEntities)
 	{
 		float aimRadius;
 		if (controller.IsWeaponRaised() || controller.IsWeaponADS())
@@ -901,11 +923,19 @@ class ARGA_IncognitoComponent : ScriptComponent
 
 		float maxRadius = Math.Max(Math.Max(aimRadius, sprintRadius), Math.Max(voiceRadius, m_fProximityRadius));
 		if (maxRadius <= 0)
-			return;
+			return false;
 
 		Faction realFaction = affiliation.GetAffiliatedFaction();
 		Faction outfitFaction = affiliation.GetPerceivedFaction();
 		vector playerPos = entity.GetOrigin();
+
+		float aimGain;
+		float sprintGain;
+		float proximityGain;
+		float strongestGain;
+		string strongestRule;
+		IEntity strongestWitness;
+		float gain;
 
 		foreach (IEntity aiEntity : aiEntities)
 		{
@@ -920,7 +950,7 @@ class ARGA_IncognitoComponent : ScriptComponent
 			if (voiceRadius > 0 && distance <= voiceRadius)
 			{
 				Break(state, "voice", aiEntity);
-				return;
+				return true;
 			}
 
 			if (!Sees(aiEntity, entity))
@@ -928,26 +958,94 @@ class ARGA_IncognitoComponent : ScriptComponent
 
 			if (aimRadius > 0 && distance <= aimRadius)
 			{
-				Break(state, "aiming", aiEntity);
-				return;
+				gain = ScaledGain(m_fAimSuspicionRate, distance, aimRadius);
+				aimGain = Math.Max(aimGain, gain);
+				if (gain > strongestGain)
+				{
+					strongestGain = gain;
+					strongestRule = "aiming";
+					strongestWitness = aiEntity;
+				}
 			}
 
 			if (sprintRadius > 0 && distance <= sprintRadius)
 			{
-				Break(state, "sprinting", aiEntity);
-				return;
+				gain = ScaledGain(m_fSprintSuspicionRate, distance, sprintRadius);
+				sprintGain = Math.Max(sprintGain, gain);
+				if (gain > strongestGain)
+				{
+					strongestGain = gain;
+					strongestRule = "sprinting";
+					strongestWitness = aiEntity;
+				}
 			}
 
 			if (m_fProximityRadius > 0 && distance <= m_fProximityRadius)
 			{
-				Break(state, "proximity", aiEntity);
-				return;
+				gain = ScaledGain(m_fProximitySuspicionRate, distance, m_fProximityRadius);
+				proximityGain = Math.Max(proximityGain, gain);
+				if (gain > strongestGain)
+				{
+					strongestGain = gain;
+					strongestRule = "proximity";
+					strongestWitness = aiEntity;
+				}
 			}
 		}
+
+		float perSecond = aimGain + sprintGain + proximityGain;
+		if (perSecond <= 0)
+			return false;
+
+		SetSuspicion(state, state.m_fSuspicion + perSecond * TICK_MS * 0.001);
+
+		if (state.m_fSuspicion >= MAX_SUSPICION)
+			Break(state, "suspicion:" + strongestRule, strongestWitness);
+
+		return true;
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! While broken: keeps the override null, refreshes the last-seen timer, and restores once unseen.
+	//! Full rate at point blank, half at the edge of the rule's radius.
+	protected float ScaledGain(float rate, float distance, float radius)
+	{
+		return rate * (1 - 0.5 * distance / radius);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Clamped setter. Diagnostics print every 10 points crossed, so the log shows the climb and the fall.
+	protected void SetSuspicion(ARGA_IncognitoState state, float value)
+	{
+		state.m_fSuspicion = Math.Clamp(value, 0, MAX_SUSPICION);
+
+		if (!m_bDebugLog)
+			return;
+
+		int bucket = Math.Floor(state.m_fSuspicion / 10);
+		if (bucket == state.m_iLastSuspicionBucket)
+			return;
+
+		state.m_iLastSuspicionBucket = bucket;
+		Print(string.Format("[ARGA_Incognito][Debug] Suspicion playerId=%1 value=%2 broken=%3", state.m_iPlayerId, state.m_fSuspicion, state.m_bBroken), LogLevel.NORMAL);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Doubles when no hostile AI is within the witness radius at all. Distance and faction only, no ray.
+	protected void DecaySuspicion(ARGA_IncognitoState state, IEntity entity, Faction realFaction, array<IEntity> aiEntities)
+	{
+		if (state.m_fSuspicion <= 0)
+			return;
+
+		float rate = m_fSuspicionDecayRate;
+		if (!FindClosestHunter(aiEntities, entity, m_fWitnessRadius, realFaction))
+			rate = rate * 2;
+
+		SetSuspicion(state, state.m_fSuspicion - rate * TICK_MS * 0.001);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! While broken: keeps the override null, holds suspicion while a hunter sees the player, lets it decay
+	//! otherwise, and restores at m_fRestoreThreshold.
 	protected void TickRecovery(ARGA_IncognitoState state, IEntity entity, Faction realFaction, array<IEntity> aiEntities)
 	{
 		PerceivableComponent perceivable = PerceivableComponent.Cast(entity.FindComponent(PerceivableComponent));
@@ -963,8 +1061,8 @@ class ARGA_IncognitoComponent : ScriptComponent
 			return;
 		}
 
-		float elapsedSeconds = (GetGame().GetWorld().GetWorldTime() - state.m_fLastSeenTime) * 0.001;
-		if (elapsedSeconds < m_fRecoverySeconds)
+		DecaySuspicion(state, entity, realFaction, aiEntities);
+		if (state.m_fSuspicion > m_fRestoreThreshold)
 			return;
 
 		if (m_bDebugLog)

@@ -76,5 +76,15 @@ Strategy: ask-on-risk. Branch `feat/incognito-component`.
   addon. Side effect seen: after a break the AI moves to the spawn, and a respawned player breaks by
   proximity about 10 s later (spawn camping; a test-world artefact).
 
+- T1 (implemented, pending manual test): route direct inline (1 file). Sprint / aim / proximity add
+  suspicion per second while an observer sees the player (rates 40 / 50 / 25, full at point blank,
+  half at the rule's radius edge; per rule the strongest observer counts, rules add up). Break at 100
+  with reason `suspicion:<rule>`. Shot, kill and voice still break at once and set suspicion to 100.
+  Decay 2.5/s when nothing suspicious happens this tick, doubled with no hostile AI within the witness
+  radius (distance only, no ray). While broken: held while a hunter sees the player, decays otherwise,
+  restored at 25 (replaces `m_fRecoverySeconds`). Debug log prints every 10 points crossed.
+  Behaviour note: the sight rules no longer stop at the first observer, so every observer in range
+  and cone costs a ray.
+
 ## Next step
-T1: suspicion meter.
+T1: manual test in the test world; the agent reads the log.
