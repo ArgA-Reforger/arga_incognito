@@ -43,7 +43,7 @@ is never wired to any entity, rebuilt on top of our server-authoritative, dedica
       12/09 checks (sprint, aim, proximity, voice).
 - [x] T1 - Suspicion meter: instant-break vs accumulating rules, decay, recovery threshold.
 - [x] T2 - Reinforcements: spawn at distance and bearing, move to break point.
-- [ ] T4 - Target-aware shot and kill rules (decided 2026-09-23, implemented, pending test): attacking a faction
+- [x] T4 - Target-aware shot and kill rules (decided 2026-09-23): attacking a faction
       that is an enemy of both the player and the disguise faction neither breaks nor adds
       suspicion. Kill breaks only if the victim is not an enemy of the outfit faction. Shot: trace
       along the weapon aim when firing; aimed at a non-enemy of the outfit -> break, even on a miss;
@@ -232,6 +232,15 @@ Strategy: ask-on-risk. Branch `feat/incognito-component`.
   (muzzle sweeping); sprinting, stray shots and proximity were already exempt. Out of combat nothing
   changes.
 
+- Run at 14:44 is void: Workbench had last reloaded scripts at 14:33, before 99752d0 and dd5111e.
+- Run B final (same log, scripts reloaded 14:54:50, after every change): own combat from 14:55:29;
+  60 shots (43 at FIA, 17 untargeted) up to 14:57:06 with no suspicion and no break while running,
+  aiming and standing among USSR. The user then talked on purpose: `reason=voice` at 14:57:34
+  (witness 42 m, VIGILANT). Restored 14:58:16, group despawned 14:58:46. At 14:59:43, 37 s after the
+  window closed, standing 4.5 m from a calm USSR (`threat=0`) broke by `suspicion:proximity`, as
+  designed out of combat. T4 closed.
+
 ## Next step
-Repeat run B.
+Feature complete. Remaining: native review of the commits after the approved review, turning off the
+test-layer debug log, and delivery (push / PR), which is the user's decision.
 Delivery (push / PR) is the user's decision.
