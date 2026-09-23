@@ -67,6 +67,24 @@ class ARGA_IncognitoComponent : ScriptComponent
 	[Attribute("25", UIWidgets.Slider, "Con el disfraz roto, se recupera cuando la sospecha baja a este valor.", params: "0 99 1", category: "Suspicion")]
 	protected float m_fRestoreThreshold;
 
+	[Attribute("0", UIWidgets.CheckBox, "Al romperse el disfraz aparece un grupo que acude al lugar de la ruptura.", category: "Reinforcements")]
+	protected bool m_bReinforcementsEnabled;
+
+	[Attribute("", UIWidgets.ResourcePickerThumbnail, "Prefab del grupo de refuerzo.", "et", category: "Reinforcements")]
+	protected ResourceName m_sReinforcementGroup;
+
+	[Attribute("200", UIWidgets.Slider, "Distancia en metros desde el punto de ruptura hasta donde aparece el grupo.", params: "20 2000 1", category: "Reinforcements")]
+	protected float m_fReinforcementDistance;
+
+	[Attribute("0", UIWidgets.Slider, "Rumbo en grados desde el punto de ruptura hacia donde aparece el grupo. 0 = norte, 90 = este.", params: "0 359 1", category: "Reinforcements")]
+	protected float m_fReinforcementBearing;
+
+	[Attribute("{B3E7B8DC2BAB8ACC}Prefabs/AI/Waypoints/AIWaypoint_SearchAndDestroy.et", UIWidgets.ResourcePickerThumbnail, "Waypoint que recibe el grupo en el punto de ruptura.", "et", category: "Reinforcements")]
+	protected ResourceName m_sReinforcementWaypoint;
+
+	[Attribute("30", UIWidgets.Slider, "Radio en metros para dar por cumplido el waypoint.", params: "5 200 1", category: "Reinforcements")]
+	protected float m_fReinforcementWaypointRadius;
+
 	[Attribute("0", UIWidgets.CheckBox, "Diagnostico: imprime en el log que percibia la IA en cada ruptura y en cada recuperacion del disfraz.", category: "Disguise Break")]
 	protected bool m_bDebugLog;
 
@@ -695,6 +713,73 @@ class ARGA_IncognitoComponent : ScriptComponent
 		SetSuspicion(state, MAX_SUSPICION);
 
 		Print(string.Format("[ARGA_Incognito] Broken playerId=%1 reason=%2", state.m_iPlayerId, reason), LogLevel.NORMAL);
+
+		if (m_bReinforcementsEnabled)
+			SpawnReinforcements(entity.GetOrigin());
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Spawns the reinforcement group at the editor's distance and bearing from breakPos, and sends it
+	//! to breakPos: where the alarm was raised, not wherever the player goes next.
+	protected void SpawnReinforcements(vector breakPos)
+	{
+		Resource groupResource = Resource.Load(m_sReinforcementGroup);
+		if (!groupResource || !groupResource.IsValid())
+		{
+			Print(string.Format("[ARGA_Incognito] Reinforcement group '%1' is not a valid prefab, nothing spawned.", m_sReinforcementGroup), LogLevel.ERROR);
+			return;
+		}
+
+		BaseWorld world = GetGame().GetWorld();
+		float bearing = m_fReinforcementBearing * Math.DEG2RAD;
+
+		vector spawnPos = breakPos;
+		spawnPos[0] = spawnPos[0] + Math.Sin(bearing) * m_fReinforcementDistance;
+		spawnPos[2] = spawnPos[2] + Math.Cos(bearing) * m_fReinforcementDistance;
+		spawnPos[1] = world.GetSurfaceY(spawnPos[0], spawnPos[2]);
+
+		SCR_AIGroup group = SCR_AIGroup.Cast(GetGame().SpawnEntityPrefab(groupResource, world, SpawnParamsAt(spawnPos)));
+		if (!group)
+		{
+			Print(string.Format("[ARGA_Incognito] Could not spawn reinforcement group '%1'.", m_sReinforcementGroup), LogLevel.ERROR);
+			return;
+		}
+
+		AIWaypoint waypoint = SpawnReinforcementWaypoint(breakPos);
+		if (waypoint)
+			group.AddWaypoint(waypoint);
+
+		Print(string.Format("[ARGA_Incognito] Reinforcements spawned at %1, heading to %2", spawnPos, breakPos), LogLevel.NORMAL);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	protected AIWaypoint SpawnReinforcementWaypoint(vector pos)
+	{
+		Resource waypointResource = Resource.Load(m_sReinforcementWaypoint);
+		if (!waypointResource || !waypointResource.IsValid())
+		{
+			Print(string.Format("[ARGA_Incognito] Reinforcement waypoint '%1' is not a valid prefab, the group gets no orders.", m_sReinforcementWaypoint), LogLevel.ERROR);
+			return null;
+		}
+
+		AIWaypoint waypoint = AIWaypoint.Cast(GetGame().SpawnEntityPrefab(waypointResource, GetGame().GetWorld(), SpawnParamsAt(pos)));
+		if (!waypoint)
+		{
+			Print(string.Format("[ARGA_Incognito] Could not spawn reinforcement waypoint '%1', the group gets no orders.", m_sReinforcementWaypoint), LogLevel.ERROR);
+			return null;
+		}
+
+		waypoint.SetCompletionRadius(m_fReinforcementWaypointRadius);
+		return waypoint;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	protected EntitySpawnParams SpawnParamsAt(vector pos)
+	{
+		EntitySpawnParams params = new EntitySpawnParams();
+		params.TransformMode = ETransformMode.WORLD;
+		params.Transform[3] = pos;
+		return params;
 	}
 
 	//------------------------------------------------------------------------------------------------

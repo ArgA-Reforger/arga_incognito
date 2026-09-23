@@ -96,5 +96,12 @@ Strategy: ask-on-risk. Branch `feat/incognito-component`.
   `SCR_PlayerLoadout` picks a random editable-entity variant (`SCR_PlayerLoadout.c:16`) and the
   prefab inherited the rifleman's variant list. The inherited variant now points at the prefab itself.
 
+- T2 (implemented, pending manual test): route direct inline (1 script + test layer). New category
+  "Reinforcements": enable flag, group prefab, distance (200), bearing (0 = north), waypoint prefab
+  (vanilla SearchAndDestroy) and its completion radius (30). On every break the group spawns at
+  breakPos + bearing * distance on the terrain surface and gets the waypoint at breakPos. No reuse,
+  despawn or cap yet (T3), so every break spawns a new group. No check that the spawn point is clear
+  of buildings or water. Test layer: USSR light fireteam at 150 m north.
+
 ## Next step
-T2: reinforcements spawn.
+T2: manual test; the agent reads the log.

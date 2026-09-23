@@ -1,6 +1,9 @@
 GenericEntity ARGA_Incognito {
  components {
   ARGA_IncognitoComponent "{4725262E23868658}" {
+   m_bReinforcementsEnabled 1
+   m_sReinforcementGroup "{657590C1EC9E27D3}Prefabs/Groups/OPFOR/Group_USSR_LightFireTeam.et"
+   m_fReinforcementDistance 150
    m_bDebugLog 1
   }
  }
