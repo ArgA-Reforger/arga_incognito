@@ -32,6 +32,14 @@ class ARGA_IncognitoState
 	int m_iLastSuspicionBucket;
 }
 
+class ARGA_IncognitoReinforcement
+{
+	SCR_AIGroup m_Group;
+	AIWaypoint m_Waypoint;
+	float m_fSpawnedAt;
+	float m_fDespawnAt;
+}
+
 class ARGA_IncognitoComponent : ScriptComponent
 {
 	[Attribute("75", UIWidgets.Slider, "Radio en metros: un observador dentro que ve al jugador cuando dispara rompe el disfraz. 0 desactiva este disparador.", params: "0 500 1", category: "Disguise Break")]
@@ -85,6 +93,18 @@ class ARGA_IncognitoComponent : ScriptComponent
 	[Attribute("30", UIWidgets.Slider, "Radio en metros para dar por cumplido el waypoint.", params: "5 200 1", category: "Reinforcements")]
 	protected float m_fReinforcementWaypointRadius;
 
+	[Attribute("120", UIWidgets.Slider, "Segundos desde que ningun jugador tiene el disfraz roto hasta retirar los grupos de refuerzo.", params: "0 1800 1", category: "Reinforcements")]
+	protected float m_fReinforcementDespawnSeconds;
+
+	[Attribute("300", UIWidgets.Slider, "Un grupo no se retira mientras un jugador a menos de esta distancia vea a alguno de sus miembros.", params: "0 2000 1", category: "Reinforcements")]
+	protected float m_fReinforcementDespawnSightRadius;
+
+	[Attribute("300", UIWidgets.Slider, "Si una nueva ruptura ocurre a menos de esta distancia de un grupo vivo, se reasigna ese grupo en vez de crear otro.", params: "0 2000 1", category: "Reinforcements")]
+	protected float m_fReinforcementReuseRadius;
+
+	[Attribute("2", UIWidgets.Slider, "Maximo de grupos de refuerzo a la vez. Al llegar al maximo, se reasigna el grupo mas cercano.", params: "1 10 1", category: "Reinforcements")]
+	protected int m_iMaxReinforcementGroups;
+
 	[Attribute("0", UIWidgets.CheckBox, "Diagnostico: imprime en el log que percibia la IA en cada ruptura y en cada recuperacion del disfraz.", category: "Disguise Break")]
 	protected bool m_bDebugLog;
 
@@ -101,6 +121,11 @@ class ARGA_IncognitoComponent : ScriptComponent
 	protected const float SPRINT_MOVEMENT_SPEED = 2.5;
 
 	protected const float MAX_SUSPICION = 100;
+
+	//! A freshly spawned group may still be creating its members; it is not pruned as empty before this.
+	protected const float REINFORCEMENT_SPAWN_GRACE_MS = 10000;
+
+	protected ref array<ref ARGA_IncognitoReinforcement> m_aReinforcements = {};
 
 	//! Reused instead of allocated per trace, as vanilla does in its own AI trace nodes.
 	protected ref TraceParam m_TraceParam = new TraceParam();
@@ -715,7 +740,181 @@ class ARGA_IncognitoComponent : ScriptComponent
 		Print(string.Format("[ARGA_Incognito] Broken playerId=%1 reason=%2", state.m_iPlayerId, reason), LogLevel.NORMAL);
 
 		if (m_bReinforcementsEnabled)
-			SpawnReinforcements(entity.GetOrigin());
+			SendReinforcements(entity.GetOrigin());
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Re-tasks a live group within the reuse radius, or the closest one once the cap is reached;
+	//! otherwise spawns a new group.
+	protected void SendReinforcements(vector breakPos)
+	{
+		PruneReinforcements();
+
+		ARGA_IncognitoReinforcement closest;
+		float closestDistance = float.MAX;
+
+		foreach (ARGA_IncognitoReinforcement reinforcement : m_aReinforcements)
+		{
+			float distance = vector.Distance(breakPos, GroupPosition(reinforcement.m_Group));
+			if (distance >= closestDistance)
+				continue;
+
+			closest = reinforcement;
+			closestDistance = distance;
+		}
+
+		bool atCap = m_aReinforcements.Count() >= m_iMaxReinforcementGroups;
+		if (!closest || (closestDistance > m_fReinforcementReuseRadius && !atCap))
+		{
+			SpawnReinforcements(breakPos);
+			return;
+		}
+
+		RetaskReinforcement(closest, breakPos);
+		Print(string.Format("[ARGA_Incognito] Reinforcements re-tasked to %1, group was %2m away, atCap=%3", breakPos, closestDistance, atCap), LogLevel.NORMAL);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	protected void RetaskReinforcement(ARGA_IncognitoReinforcement reinforcement, vector breakPos)
+	{
+		if (reinforcement.m_Waypoint)
+		{
+			reinforcement.m_Group.RemoveWaypoint(reinforcement.m_Waypoint);
+			SCR_EntityHelper.DeleteEntityAndChildren(reinforcement.m_Waypoint);
+		}
+
+		reinforcement.m_Waypoint = SpawnReinforcementWaypoint(breakPos);
+		if (reinforcement.m_Waypoint)
+			reinforcement.m_Group.AddWaypoint(reinforcement.m_Waypoint);
+
+		reinforcement.m_fDespawnAt = 0;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Position of the first member still standing; the group entity itself does not follow its members.
+	protected vector GroupPosition(SCR_AIGroup group)
+	{
+		array<AIAgent> agents = {};
+		group.GetAgents(agents);
+
+		foreach (AIAgent agent : agents)
+		{
+			IEntity member = agent.GetControlledEntity();
+			if (member)
+				return member.GetOrigin();
+		}
+
+		return group.GetOrigin();
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Drops groups that were deleted or wiped out, past the spawn grace period.
+	protected void PruneReinforcements()
+	{
+		float now = GetGame().GetWorld().GetWorldTime();
+
+		for (int i = m_aReinforcements.Count() - 1; i >= 0; i--)
+		{
+			ARGA_IncognitoReinforcement reinforcement = m_aReinforcements[i];
+			if (reinforcement.m_Group && (reinforcement.m_Group.GetAgentsCount() > 0 || now - reinforcement.m_fSpawnedAt < REINFORCEMENT_SPAWN_GRACE_MS))
+				continue;
+
+			DeleteReinforcement(reinforcement);
+			m_aReinforcements.Remove(i);
+		}
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Same order vanilla uses to despawn a group: members first, then the group.
+	protected void DeleteReinforcement(ARGA_IncognitoReinforcement reinforcement)
+	{
+		if (reinforcement.m_Waypoint)
+			SCR_EntityHelper.DeleteEntityAndChildren(reinforcement.m_Waypoint);
+
+		if (!reinforcement.m_Group)
+			return;
+
+		array<AIAgent> agents = {};
+		reinforcement.m_Group.GetAgents(agents);
+
+		foreach (AIAgent agent : agents)
+		{
+			IEntity member = agent.GetControlledEntity();
+			if (member)
+				RplComponent.DeleteRplEntity(member, false);
+		}
+
+		RplComponent.DeleteRplEntity(reinforcement.m_Group, false);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Any broken disguise holds every group. Once none is broken, each group waits its despawn time and
+	//! then leaves as soon as no player within the sight radius sees any of its members.
+	protected void TickReinforcements(bool anyBroken)
+	{
+		if (m_aReinforcements.IsEmpty())
+			return;
+
+		PruneReinforcements();
+
+		float now = GetGame().GetWorld().GetWorldTime();
+
+		for (int i = m_aReinforcements.Count() - 1; i >= 0; i--)
+		{
+			ARGA_IncognitoReinforcement reinforcement = m_aReinforcements[i];
+
+			if (anyBroken)
+			{
+				reinforcement.m_fDespawnAt = 0;
+				continue;
+			}
+
+			if (reinforcement.m_fDespawnAt <= 0)
+			{
+				reinforcement.m_fDespawnAt = now + m_fReinforcementDespawnSeconds * 1000;
+				continue;
+			}
+
+			if (now < reinforcement.m_fDespawnAt)
+				continue;
+
+			if (IsSeenByAnyPlayer(reinforcement.m_Group))
+				continue;
+
+			DeleteReinforcement(reinforcement);
+			m_aReinforcements.Remove(i);
+
+			Print("[ARGA_Incognito] Reinforcements despawned out of sight.", LogLevel.NORMAL);
+		}
+	}
+
+	//------------------------------------------------------------------------------------------------
+	protected bool IsSeenByAnyPlayer(SCR_AIGroup group)
+	{
+		array<AIAgent> agents = {};
+		group.GetAgents(agents);
+
+		foreach (int playerId, ARGA_IncognitoState state : m_mStates)
+		{
+			IEntity player = state.m_Entity;
+			if (!player)
+				continue;
+
+			foreach (AIAgent agent : agents)
+			{
+				IEntity member = agent.GetControlledEntity();
+				if (!member)
+					continue;
+
+				if (vector.Distance(player.GetOrigin(), member.GetOrigin()) > m_fReinforcementDespawnSightRadius)
+					continue;
+
+				if (Sees(player, member))
+					return true;
+			}
+		}
+
+		return false;
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -748,6 +947,12 @@ class ARGA_IncognitoComponent : ScriptComponent
 		AIWaypoint waypoint = SpawnReinforcementWaypoint(breakPos);
 		if (waypoint)
 			group.AddWaypoint(waypoint);
+
+		ARGA_IncognitoReinforcement reinforcement = new ARGA_IncognitoReinforcement();
+		reinforcement.m_Group = group;
+		reinforcement.m_Waypoint = waypoint;
+		reinforcement.m_fSpawnedAt = GetGame().GetWorld().GetWorldTime();
+		m_aReinforcements.Insert(reinforcement);
 
 		Print(string.Format("[ARGA_Incognito] Reinforcements spawned at %1, heading to %2", spawnPos, breakPos), LogLevel.NORMAL);
 	}
@@ -903,9 +1108,14 @@ class ARGA_IncognitoComponent : ScriptComponent
 		array<IEntity> aiEntities = {};
 		CollectAIEntities(aiEntities);
 
+		bool anyBroken;
+
 		foreach (int playerId, ARGA_IncognitoState state : m_mStates)
 		{
 			SyncWatchedEntity(state);
+
+			if (state.m_bBroken)
+				anyBroken = true;
 
 			IEntity entity = state.m_Entity;
 			if (!entity)
@@ -940,6 +1150,8 @@ class ARGA_IncognitoComponent : ScriptComponent
 			if (!EvaluateBreakRules(state, entity, controller, affiliation, aiEntities))
 				DecaySuspicion(state, entity, realFaction, aiEntities);
 		}
+
+		TickReinforcements(anyBroken);
 
 		if (m_bDebugLog && (m_iTraceCount > 0 || m_iFovRejects > 0))
 			Print(string.Format("[ARGA_Incognito][Debug] Tick traces=%1 fovRejects=%2 ai=%3", m_iTraceCount, m_iFovRejects, aiEntities.Count()), LogLevel.NORMAL);

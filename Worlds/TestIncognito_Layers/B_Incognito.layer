@@ -4,6 +4,7 @@ GenericEntity ARGA_Incognito {
    m_bReinforcementsEnabled 1
    m_sReinforcementGroup "{85384D373DB6EBBB}Prefabs/Groups/OPFOR/Naval_Infantry/Group_USSR_SentryTeam_NI.et"
    m_fReinforcementDistance 150
+   m_fReinforcementDespawnSeconds 30
    m_bDebugLog 1
   }
  }

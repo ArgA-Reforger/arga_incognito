@@ -110,5 +110,13 @@ Strategy: ask-on-risk. Branch `feat/incognito-component`.
   spawned with the pinned prefab, confirming the variant fix. The user then switched the test group
   to `Group_USSR_SentryTeam_NI` (naval infantry) to tell it apart from the local fireteam.
 
+- T3 (implemented, pending manual test): route direct inline (1 script + test layer). Spawned groups
+  are tracked. A break re-tasks the closest live group when it is within the reuse radius (300 m), or
+  whatever its distance once the cap (2) is reached; otherwise it spawns a new one. Re-tasking swaps
+  the waypoint and cancels the despawn timer. Any broken disguise holds all groups; once none is
+  broken, each group waits the despawn time (120 s; 30 s in the test layer) and is deleted, members
+  first as vanilla does (`SCR_AIGroup.c:2904-2911`), only when no player within 300 m sees any member.
+  Dead or deleted groups are pruned after a 10 s spawn grace.
+
 ## Next step
-T3: timed despawn out of sight, reuse radius, group cap.
+T3: manual test; the agent reads the log.
