@@ -249,7 +249,11 @@ Strategy: ask-on-risk. Branch `feat/incognito-component`.
   5. Several branches proven only by reading (kill of an outfit enemy, one-shot facing victim, cap,
      OnDelete beyond one Play stop).
 
+- Warning 3 fixed (user approved): `CheckVictimWitness` now requires the victim to be hostile to the
+  player's real faction (`IsHunter`), like every other witness. Not re-run in play: with the current
+  configs every faction is hostile, so the outcome of past runs does not change.
+
 ## Next step
-Decide on warning 3; dedicated-server run for warning 2; turn off the test-layer debug log;
+Dedicated-server run for warning 2; turn off the test-layer debug log;
 delivery (push / PR) is the user's decision.
 Delivery (push / PR) is the user's decision.

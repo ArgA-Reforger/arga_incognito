@@ -1394,6 +1394,11 @@ class ARGA_IncognitoComponent : ScriptComponent
 		if (!state || state.m_bBroken || !state.m_Entity || !victim)
 			return;
 
+		// Like any other witness, the victim must be hostile to the player's real faction.
+		SCR_CharacterFactionAffiliationComponent affiliation = SCR_CharacterFactionAffiliationComponent.Cast(state.m_Entity.FindComponent(SCR_CharacterFactionAffiliationComponent));
+		if (!affiliation || !IsHunter(victim, affiliation.GetAffiliatedFaction()))
+			return;
+
 		SCR_ChimeraCharacter character = SCR_ChimeraCharacter.Cast(victim);
 		if (!character)
 			return;
