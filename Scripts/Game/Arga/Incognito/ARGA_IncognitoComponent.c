@@ -44,79 +44,79 @@ class ARGA_IncognitoReinforcement
 
 class ARGA_IncognitoComponent : ScriptComponent
 {
-	[Attribute("75", UIWidgets.Slider, "Radio en metros: un observador dentro que ve al jugador disparar a su propio bando rompe el disfraz; si el disparo no apunta a nadie, suma sospecha. Disparar a un enemigo de ese bando no cuenta. 0 desactiva este disparador.", params: "0 500 1", category: "Disguise Break")]
+	[Attribute("75", UIWidgets.Slider, "Radio de disparo (m).", params: "0 500 1", category: "Disguise Break")]
 	protected float m_fShotRadius;
 
-	[Attribute("50", UIWidgets.Slider, "Radio en metros: un observador que ve al jugador apuntando o en ADS a alguien de su propio bando suma sospecha. Apuntar a un enemigo de ese bando o a nadie no cuenta, ni apuntar en combate. 0 desactiva este disparador.", params: "0 200 1", category: "Disguise Break")]
+	[Attribute("50", UIWidgets.Slider, "Radio de apuntado (m).", params: "0 200 1", category: "Disguise Break")]
 	protected float m_fAimRadius;
 
-	[Attribute("300", UIWidgets.Slider, "Distancia maxima en metros para identificar a quien apunta o dispara el jugador.", params: "10 1000 1", category: "Disguise Break")]
+	[Attribute("300", UIWidgets.Slider, "Alcance para identificar el blanco (m).", params: "10 1000 1", category: "Disguise Break")]
 	protected float m_fAimTargetRange;
 
-	[Attribute("100", UIWidgets.Slider, "Radio en metros: un observador que ve al jugador esprintando suma sospecha. 0 desactiva este disparador.", params: "0 500 1", category: "Disguise Break")]
+	[Attribute("100", UIWidgets.Slider, "Radio de sprint (m).", params: "0 500 1", category: "Disguise Break")]
 	protected float m_fSprintRadius;
 
-	[Attribute("10", UIWidgets.Slider, "Radio en metros: un observador dentro que ve al jugador suma sospecha por cercania. 0 desactiva este disparador.", params: "0 100 1", category: "Disguise Break")]
+	[Attribute("10", UIWidgets.Slider, "Radio de cercania (m).", params: "0 100 1", category: "Disguise Break")]
 	protected float m_fProximityRadius;
 
-	[Attribute("200", UIWidgets.Slider, "Radio en metros para testigos que deben ver al jugador cuando mata. Tambien se usa para detectar cazadores durante la recuperacion. 0 desactiva estos usos.", params: "0 500 1", category: "Disguise Break")]
+	[Attribute("200", UIWidgets.Slider, "Radio de testigos (m).", params: "0 500 1", category: "Disguise Break")]
 	protected float m_fWitnessRadius;
 
-	[Attribute("1", UIWidgets.CheckBox, "Hablar por voz directa rompe el disfraz si un enemigo esta dentro del alcance de la voz. El alcance NO se configura aca: sale del propio mod de voz.", category: "Disguise Break")]
+	[Attribute("1", UIWidgets.CheckBox, "Romper por voz.", category: "Disguise Break")]
 	protected bool m_bVoiceBreak;
 
-	[Attribute("40", UIWidgets.Slider, "Sospecha por segundo mientras un observador ve al jugador esprintando. Suma la mitad en el borde del radio.", params: "0 200 1", category: "Suspicion")]
+	[Attribute("40", UIWidgets.Slider, "Sospecha por segundo al esprintar.", params: "0 200 1", category: "Suspicion")]
 	protected float m_fSprintSuspicionRate;
 
-	[Attribute("50", UIWidgets.Slider, "Sospecha por segundo mientras un observador ve al jugador apuntando o con el arma en alto. Suma la mitad en el borde del radio.", params: "0 200 1", category: "Suspicion")]
+	[Attribute("50", UIWidgets.Slider, "Sospecha por segundo al apuntar.", params: "0 200 1", category: "Suspicion")]
 	protected float m_fAimSuspicionRate;
 
-	[Attribute("25", UIWidgets.Slider, "Sospecha por segundo mientras un observador ve al jugador dentro del radio de cercania. Suma la mitad en el borde del radio.", params: "0 200 1", category: "Suspicion")]
+	[Attribute("25", UIWidgets.Slider, "Sospecha por segundo por cercania.", params: "0 200 1", category: "Suspicion")]
 	protected float m_fProximitySuspicionRate;
 
-	[Attribute("30", UIWidgets.Slider, "Sospecha que suma cada disparo visto que no apunta a nadie, por ejemplo al aire o a una pared.", params: "0 100 1", category: "Suspicion")]
+	[Attribute("30", UIWidgets.Slider, "Sospecha por disparo sin blanco.", params: "0 100 1", category: "Suspicion")]
 	protected float m_fStrayShotSuspicion;
 
-	[Attribute("30", UIWidgets.Slider, "Segundos que el jugador cuenta como en combate despues de disparar a un enemigo del disfraz o de ser identificado como enemigo por uno. En ese tiempo esprintar y disparar a la nada no suman sospecha.", params: "0 300 1", category: "Suspicion")]
+	[Attribute("30", UIWidgets.Slider, "Duracion del combate propio (s).", params: "0 300 1", category: "Suspicion")]
 	protected float m_fOwnCombatSeconds;
 
-	[Attribute("2.5", UIWidgets.Slider, "Sospecha que baja por segundo mientras el jugador no hace nada sospechoso. Se duplica si no hay IA hostil dentro del radio de testigos.", params: "0 50 0.1", category: "Suspicion")]
+	[Attribute("2.5", UIWidgets.Slider, "Descenso de sospecha por segundo.", params: "0 50 0.1", category: "Suspicion")]
 	protected float m_fSuspicionDecayRate;
 
-	[Attribute("25", UIWidgets.Slider, "Con el disfraz roto, se recupera cuando la sospecha baja a este valor.", params: "0 99 1", category: "Suspicion")]
+	[Attribute("25", UIWidgets.Slider, "Umbral de recuperacion.", params: "0 99 1", category: "Suspicion")]
 	protected float m_fRestoreThreshold;
 
-	[Attribute("0", UIWidgets.CheckBox, "Al romperse el disfraz aparece un grupo que acude al lugar de la ruptura.", category: "Reinforcements")]
+	[Attribute("0", UIWidgets.CheckBox, "Activar refuerzos.", category: "Reinforcements")]
 	protected bool m_bReinforcementsEnabled;
 
 	[Attribute("", UIWidgets.ResourcePickerThumbnail, "Prefab del grupo de refuerzo.", "et", category: "Reinforcements")]
 	protected ResourceName m_sReinforcementGroup;
 
-	[Attribute("200", UIWidgets.Slider, "Distancia en metros desde el punto de ruptura hasta donde aparece el grupo.", params: "20 2000 1", category: "Reinforcements")]
+	[Attribute("200", UIWidgets.Slider, "Distancia de aparicion (m).", params: "20 2000 1", category: "Reinforcements")]
 	protected float m_fReinforcementDistance;
 
-	[Attribute("0", UIWidgets.Slider, "Rumbo en grados desde el punto de ruptura hacia donde aparece el grupo. 0 = norte, 90 = este.", params: "0 359 1", category: "Reinforcements")]
+	[Attribute("0", UIWidgets.Slider, "Rumbo de aparicion (grados, 0 = norte).", params: "0 359 1", category: "Reinforcements")]
 	protected float m_fReinforcementBearing;
 
-	[Attribute("{B3E7B8DC2BAB8ACC}Prefabs/AI/Waypoints/AIWaypoint_SearchAndDestroy.et", UIWidgets.ResourcePickerThumbnail, "Waypoint que recibe el grupo en el punto de ruptura.", "et", category: "Reinforcements")]
+	[Attribute("{B3E7B8DC2BAB8ACC}Prefabs/AI/Waypoints/AIWaypoint_SearchAndDestroy.et", UIWidgets.ResourcePickerThumbnail, "Waypoint del grupo.", "et", category: "Reinforcements")]
 	protected ResourceName m_sReinforcementWaypoint;
 
-	[Attribute("30", UIWidgets.Slider, "Radio en metros para dar por cumplido el waypoint.", params: "5 200 1", category: "Reinforcements")]
+	[Attribute("30", UIWidgets.Slider, "Radio del waypoint (m).", params: "5 200 1", category: "Reinforcements")]
 	protected float m_fReinforcementWaypointRadius;
 
-	[Attribute("120", UIWidgets.Slider, "Segundos desde que ningun jugador tiene el disfraz roto hasta retirar los grupos de refuerzo.", params: "0 1800 1", category: "Reinforcements")]
+	[Attribute("120", UIWidgets.Slider, "Tiempo de retiro (s).", params: "0 1800 1", category: "Reinforcements")]
 	protected float m_fReinforcementDespawnSeconds;
 
-	[Attribute("300", UIWidgets.Slider, "Un grupo no se retira mientras un jugador a menos de esta distancia vea a alguno de sus miembros.", params: "0 2000 1", category: "Reinforcements")]
+	[Attribute("300", UIWidgets.Slider, "Radio de vision para el retiro (m).", params: "0 2000 1", category: "Reinforcements")]
 	protected float m_fReinforcementDespawnSightRadius;
 
-	[Attribute("300", UIWidgets.Slider, "Si una nueva ruptura ocurre a menos de esta distancia de un grupo vivo, se reasigna ese grupo en vez de crear otro.", params: "0 2000 1", category: "Reinforcements")]
+	[Attribute("300", UIWidgets.Slider, "Radio de reutilizacion (m).", params: "0 2000 1", category: "Reinforcements")]
 	protected float m_fReinforcementReuseRadius;
 
-	[Attribute("1", UIWidgets.Slider, "Maximo de grupos de refuerzo a la vez. Al llegar al maximo, se reasigna el grupo mas cercano.", params: "1 10 1", category: "Reinforcements")]
+	[Attribute("1", UIWidgets.Slider, "Maximo de grupos.", params: "1 10 1", category: "Reinforcements")]
 	protected int m_iMaxReinforcementGroups;
 
-	[Attribute("0", UIWidgets.CheckBox, "Diagnostico: imprime en el log que percibia la IA en cada ruptura y en cada recuperacion del disfraz.", category: "Disguise Break")]
+	[Attribute("0", UIWidgets.CheckBox, "Log de diagnostico.", category: "Disguise Break")]
 	protected bool m_bDebugLog;
 
 	//! Server tick period, also the voice window: voice arrives every frame while the key is held.
