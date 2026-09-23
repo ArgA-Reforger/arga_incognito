@@ -6,10 +6,11 @@ class ARGA_IncognitoComponentClass : ScriptComponentClass
 //! Initializes the vanilla perceived-faction (disguise) system under game modes that bypass the vanilla
 //! spawn pipeline, where its own spawn hook never runs. Server only.
 //!
-//! Disguise break (global, faction-agnostic): shooting, killing or talking near an "observer" (an
-//! enemy-of-his-real-faction AI that is not enemy-of-his-outfit) clears the player's AI override at once.
-//! Aiming, sprinting or standing too close in an observer's sight only raise a server-side suspicion
-//! level, and the disguise breaks when it reaches MAX_SUSPICION. Suspicion decays while he does nothing
+//! Disguise break (global, faction-agnostic): talking near an "observer" (an enemy-of-his-real-faction AI
+//! that is not enemy-of-his-outfit), or shooting or killing someone of the outfit's own side in an
+//! observer's sight, clears the player's AI override at once. Attacking an enemy of the outfit faction
+//! gives nothing away. Aiming at the outfit's side, stray shots, sprinting or standing too close only
+//! raise a server-side suspicion level, and the disguise breaks when it reaches MAX_SUSPICION. Suspicion decays while he does nothing
 //! suspicious; once broken, it decays only while no "hunter" (enemy-of-his-real-faction AI) sees him, and
 //! the disguise is restored at m_fRestoreThreshold. Voice is the only rule that does not require line of
 //! sight, and its radius comes from the VON component the player transmits through.
@@ -42,11 +43,14 @@ class ARGA_IncognitoReinforcement
 
 class ARGA_IncognitoComponent : ScriptComponent
 {
-	[Attribute("75", UIWidgets.Slider, "Radio en metros: un observador dentro que ve al jugador cuando dispara rompe el disfraz. 0 desactiva este disparador.", params: "0 500 1", category: "Disguise Break")]
+	[Attribute("75", UIWidgets.Slider, "Radio en metros: un observador dentro que ve al jugador disparar a su propio bando rompe el disfraz; si el disparo no apunta a nadie, suma sospecha. Disparar a un enemigo de ese bando no cuenta. 0 desactiva este disparador.", params: "0 500 1", category: "Disguise Break")]
 	protected float m_fShotRadius;
 
-	[Attribute("50", UIWidgets.Slider, "Radio en metros: un observador que ve al jugador apuntando o en ADS suma sospecha. 0 desactiva este disparador.", params: "0 200 1", category: "Disguise Break")]
+	[Attribute("50", UIWidgets.Slider, "Radio en metros: un observador que ve al jugador apuntando o en ADS a alguien de su propio bando suma sospecha. Apuntar a un enemigo de ese bando o a nadie no cuenta. 0 desactiva este disparador.", params: "0 200 1", category: "Disguise Break")]
 	protected float m_fAimRadius;
+
+	[Attribute("300", UIWidgets.Slider, "Distancia maxima en metros para identificar a quien apunta o dispara el jugador.", params: "10 1000 1", category: "Disguise Break")]
+	protected float m_fAimTargetRange;
 
 	[Attribute("100", UIWidgets.Slider, "Radio en metros: un observador que ve al jugador esprintando suma sospecha. 0 desactiva este disparador.", params: "0 500 1", category: "Disguise Break")]
 	protected float m_fSprintRadius;
@@ -68,6 +72,9 @@ class ARGA_IncognitoComponent : ScriptComponent
 
 	[Attribute("25", UIWidgets.Slider, "Sospecha por segundo mientras un observador ve al jugador dentro del radio de cercania. Suma la mitad en el borde del radio.", params: "0 200 1", category: "Suspicion")]
 	protected float m_fProximitySuspicionRate;
+
+	[Attribute("30", UIWidgets.Slider, "Sospecha que suma cada disparo visto que no apunta a nadie, por ejemplo al aire o a una pared.", params: "0 100 1", category: "Suspicion")]
+	protected float m_fStrayShotSuspicion;
 
 	[Attribute("2.5", UIWidgets.Slider, "Sospecha que baja por segundo mientras el jugador no hace nada sospechoso. Se duplica si no hay IA hostil dentro del radio de testigos.", params: "0 50 0.1", category: "Suspicion")]
 	protected float m_fSuspicionDecayRate;
@@ -121,6 +128,13 @@ class ARGA_IncognitoComponent : ScriptComponent
 	protected const float SPRINT_MOVEMENT_SPEED = 2.5;
 
 	protected const float MAX_SUSPICION = 100;
+
+	//! cos(5 deg): how close to the weapon's aim line a character must be to count as the one aimed at.
+	protected const float AIM_TARGET_MIN_DOT = 0.996;
+
+	protected const int TARGET_NONE = 0;
+	protected const int TARGET_DISGUISE_SIDE = 1;
+	protected const int TARGET_OUTFIT_ENEMY = 2;
 
 	//! A freshly spawned group may still be creating its members; it is not pruned as empty before this.
 	protected const float REINFORCEMENT_SPAWN_GRACE_MS = 10000;
@@ -602,18 +616,7 @@ class ARGA_IncognitoComponent : ScriptComponent
 			return false;
 		}
 
-		m_iTraceCount++;
-
-		m_aTraceExclude[0] = aiEntity;
-		m_aTraceExclude[1] = player;
-
-		m_TraceParam.Start = eye;
-		m_TraceParam.End = torso;
-		m_TraceParam.Flags = TraceFlags.ENTS | TraceFlags.OCEAN | TraceFlags.WORLD | TraceFlags.ANY_CONTACT;
-		m_TraceParam.Exclude = null;
-		m_TraceParam.ExcludeArray = m_aTraceExclude;
-
-		float fraction = GetGame().GetWorld().TraceMove(m_TraceParam, null);
+		float fraction = TraceFraction(eye, torso, aiEntity, player);
 		if (fraction < 1)
 		{
 			m_sLastSeeFail = string.Format("blocked frac=%1", fraction);
@@ -622,6 +625,130 @@ class ARGA_IncognitoComponent : ScriptComponent
 
 		m_sLastSeeFail = "";
 		return true;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! 1 when nothing but a and b lies between from and to.
+	protected float TraceFraction(vector from, vector to, IEntity a, IEntity b)
+	{
+		m_iTraceCount++;
+
+		m_aTraceExclude[0] = a;
+		m_aTraceExclude[1] = b;
+
+		m_TraceParam.Start = from;
+		m_TraceParam.End = to;
+		m_TraceParam.Flags = TraceFlags.ENTS | TraceFlags.OCEAN | TraceFlags.WORLD | TraceFlags.ANY_CONTACT;
+		m_TraceParam.Exclude = null;
+		m_TraceParam.ExcludeArray = m_aTraceExclude;
+
+		return GetGame().GetWorld().TraceMove(m_TraceParam, null);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! The alive AI character the player's weapon points at: closest to the aim line within a narrow
+	//! cone, in range, and with a clear line of fire. A cone instead of a hit test, so a miss aimed at
+	//! someone still counts as aimed at him. Checks head, chest and hips, so crouched or close targets
+	//! are not missed. Null when nobody is aimed at.
+	protected IEntity FindAimedCharacter(IEntity player, array<IEntity> aiEntities)
+	{
+		ChimeraCharacter character = ChimeraCharacter.Cast(player);
+		if (!character)
+			return null;
+
+		AimingComponent aiming = character.GetWeaponAimingComponent();
+		if (!aiming)
+			return null;
+
+		vector aimDir = aiming.GetAimingDirectionWorld();
+		vector eye = EyeOf(player);
+		vector playerPos = player.GetOrigin();
+
+		IEntity best;
+		float bestDot = AIM_TARGET_MIN_DOT;
+
+		foreach (IEntity aiEntity : aiEntities)
+		{
+			if (aiEntity == player)
+				continue;
+
+			if (vector.Distance(playerPos, aiEntity.GetOrigin()) > m_fAimTargetRange)
+				continue;
+
+			vector head = EyeOf(aiEntity);
+			vector feet = aiEntity.GetOrigin();
+			float dot = -1;
+			vector point;
+
+			for (int i = 0; i < 3; i++)
+			{
+				vector candidate = feet + (head - feet) * (0.4 + 0.3 * i);
+				float candidateDot = vector.Dot(aimDir, vector.Direction(eye, candidate).Normalized());
+				if (candidateDot <= dot)
+					continue;
+
+				dot = candidateDot;
+				point = candidate;
+			}
+
+			if (dot <= bestDot)
+				continue;
+
+			if (!IsAliveCharacter(aiEntity))
+				continue;
+
+			if (TraceFraction(eye, point, aiEntity, player) < 1)
+				continue;
+
+			best = aiEntity;
+			bestDot = dot;
+		}
+
+		return best;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	protected bool IsAliveCharacter(IEntity entity)
+	{
+		SCR_ChimeraCharacter character = SCR_ChimeraCharacter.Cast(entity);
+		if (!character)
+			return false;
+
+		CharacterControllerComponent controller = character.GetCharacterController();
+		return controller && !controller.IsDead();
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! TARGET_DISGUISE_SIDE: the outfit faction or anyone it is not hostile to; attacking it gives the
+	//! player away. TARGET_OUTFIT_ENEMY: someone the outfit faction is hostile to; attacking it is what
+	//! that faction would do anyway. TARGET_NONE: nobody, or no faction.
+	protected int ClassifyTarget(IEntity target, Faction outfitFaction)
+	{
+		if (!target || !outfitFaction)
+			return TARGET_NONE;
+
+		FactionAffiliationComponent affiliation = FactionAffiliationComponent.Cast(target.FindComponent(FactionAffiliationComponent));
+		if (!affiliation)
+			return TARGET_NONE;
+
+		Faction targetFaction = affiliation.GetAffiliatedFaction();
+		if (!targetFaction)
+			return TARGET_NONE;
+
+		if (outfitFaction.IsFactionEnemy(targetFaction))
+			return TARGET_OUTFIT_ENEMY;
+
+		return TARGET_DISGUISE_SIDE;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Adds a one-off amount and breaks at MAX_SUSPICION.
+	protected void RaiseSuspicion(ARGA_IncognitoState state, float amount, string rule, IEntity witness)
+	{
+		SetSuspicion(state, state.m_fSuspicion + amount);
+
+		if (state.m_fSuspicion >= MAX_SUSPICION)
+			Break(state, "suspicion:" + rule, witness);
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -1050,11 +1177,29 @@ class ARGA_IncognitoComponent : ScriptComponent
 		array<IEntity> aiEntities = {};
 		CollectAIEntities(aiEntities);
 
+		IEntity aimed = FindAimedCharacter(state.m_Entity, aiEntities);
+		int target = ClassifyTarget(aimed, outfitFaction);
+
+		if (m_bDebugLog)
+			Print(string.Format("[ARGA_Incognito][Debug] Shot playerId=%1 target=%2 aimed=%3", state.m_iPlayerId, target, aimed), LogLevel.NORMAL);
+
+		// Shooting at an enemy of the outfit is what that faction would do itself.
+		if (target == TARGET_OUTFIT_ENEMY)
+			return;
+
 		vector playerPos = state.m_Entity.GetOrigin();
 
 		IEntity witness = FindObserverInRange(aiEntities, state.m_Entity, playerPos, m_fShotRadius, realFaction, outfitFaction, requireSight: true);
-		if (witness)
+		if (!witness)
+			return;
+
+		if (target == TARGET_DISGUISE_SIDE)
+		{
 			Break(state, "shot", witness);
+			return;
+		}
+
+		RaiseSuspicion(state, m_fStrayShotSuspicion, "stray shot", witness);
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -1075,6 +1220,10 @@ class ARGA_IncognitoComponent : ScriptComponent
 
 		Faction realFaction = affiliation.GetAffiliatedFaction();
 		Faction outfitFaction = affiliation.GetPerceivedFaction();
+
+		// Killing an enemy of the outfit is what that faction would do itself.
+		if (ClassifyTarget(instigatorContextData.GetVictimEntity(), outfitFaction) == TARGET_OUTFIT_ENEMY)
+			return;
 
 		array<IEntity> aiEntities = {};
 		CollectAIEntities(aiEntities);
@@ -1225,8 +1374,9 @@ class ARGA_IncognitoComponent : ScriptComponent
 	//! the strongest observer per rule and add up. Returns true when suspicion was raised this tick.
 	protected bool EvaluateBreakRules(ARGA_IncognitoState state, IEntity entity, CharacterControllerComponent controller, SCR_CharacterFactionAffiliationComponent affiliation, array<IEntity> aiEntities)
 	{
+		// Only aiming at the outfit's own side is suspicious; the cone search runs only with the weapon up.
 		float aimRadius;
-		if (controller.IsWeaponRaised() || controller.IsWeaponADS())
+		if ((controller.IsWeaponRaised() || controller.IsWeaponADS()) && ClassifyTarget(FindAimedCharacter(entity, aiEntities), affiliation.GetPerceivedFaction()) == TARGET_DISGUISE_SIDE)
 			aimRadius = m_fAimRadius;
 
 		bool sprinting = IsSprinting(controller);
@@ -1318,11 +1468,7 @@ class ARGA_IncognitoComponent : ScriptComponent
 		if (perSecond <= 0)
 			return false;
 
-		SetSuspicion(state, state.m_fSuspicion + perSecond * TICK_MS * 0.001);
-
-		if (state.m_fSuspicion >= MAX_SUSPICION)
-			Break(state, "suspicion:" + strongestRule, strongestWitness);
-
+		RaiseSuspicion(state, perSecond * TICK_MS * 0.001, strongestRule, strongestWitness);
 		return true;
 	}
 

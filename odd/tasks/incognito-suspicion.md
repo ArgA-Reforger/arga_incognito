@@ -43,12 +43,12 @@ is never wired to any entity, rebuilt on top of our server-authoritative, dedica
       12/09 checks (sprint, aim, proximity, voice).
 - [x] T1 - Suspicion meter: instant-break vs accumulating rules, decay, recovery threshold.
 - [x] T2 - Reinforcements: spawn at distance and bearing, move to break point.
-- [ ] T4 - Target-aware shot and kill rules (decided 2026-09-23, not started): attacking a faction
+- [ ] T4 - Target-aware shot and kill rules (decided 2026-09-23, implemented, pending test): attacking a faction
       that is an enemy of both the player and the disguise faction neither breaks nor adds
       suspicion. Kill breaks only if the victim is not an enemy of the outfit faction. Shot: trace
       along the weapon aim when firing; aimed at a non-enemy of the outfit -> break, even on a miss;
-      aimed at an enemy of the outfit -> nothing; aimed at nothing -> adds suspicion. Proposed:
-      aiming at an enemy of the outfit adds no suspicion either.
+      aimed at an enemy of the outfit -> nothing; aimed at nothing -> adds suspicion. Aiming adds
+      suspicion only while aimed at the disguise side (user, 2026-09-23).
 - [x] T3 - Reinforcements: timed despawn out of sight, reuse radius, group cap.
 
 ## TDD
@@ -144,6 +144,18 @@ Strategy: ask-on-risk. Branch `feat/incognito-component`.
   entities already being deleted (world shutdown). Warning 1 left as is (inherited design, low risk).
   Test layer reuse radius lowered to 50 m so the cap can be reached without walking 300 m.
 
+- T4 (implemented, pending manual test): route direct inline (1 script + test layer). The aimed
+  character is the alive AI closest to the weapon aim line (`ChimeraCharacter.GetWeaponAimingComponent`
+  -> `GetAimingDirectionWorld`) within 5 deg, checked at hips, chest and head, in range (300 m) and
+  with a clear line of fire; a cone instead of a hit test so misses aimed at someone still count.
+  Targets classify as disguise side (outfit faction or its non-enemies), outfit enemy, or none.
+  Shot: outfit enemy -> nothing; disguise side + witness -> break; none + witness -> +30 suspicion.
+  Kill: victim an outfit enemy -> nothing. Aim: suspicion only while aimed at the disguise side.
+  Only AI characters are candidates; players are not. Unverified: whether the weapon aim direction of
+  a remote player is up to date on a dedicated server. Test layer: FIA fireteam ~100 m south of the
+  spawn as the third party (no friendly-faction lists found in the vanilla or ArgA faction configs,
+  so every pair of factions is hostile).
+
 ## Next step
-One manual run for warnings 3 and 4 (shot break, kill break, cap) and a clean Play stop for 2.
-Delivery (push / PR) is the user's decision.
+One manual run covering T4, the cap (warning 3), shot and kill breaks (warning 4) and a clean Play
+stop (warning 2). Delivery (push / PR) is the user's decision.
