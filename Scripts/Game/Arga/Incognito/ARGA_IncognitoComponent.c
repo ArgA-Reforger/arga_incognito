@@ -1193,7 +1193,8 @@ class ARGA_IncognitoComponent : ScriptComponent
 
 		vector playerPos = state.m_Entity.GetOrigin();
 
-		IEntity witness = FindObserverInRange(aiEntities, state.m_Entity, playerPos, m_fShotRadius, realFaction, outfitFaction, requireSight: true);
+		// The victim is judged only after the shot lands, even when he is looking at the player.
+		IEntity witness = FindObserverInRange(aiEntities, state.m_Entity, playerPos, m_fShotRadius, realFaction, outfitFaction, requireSight: true, exclude: aimed);
 
 		if (target == TARGET_DISGUISE_SIDE)
 		{

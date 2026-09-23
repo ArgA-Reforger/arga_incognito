@@ -167,6 +167,15 @@ Strategy: ask-on-risk. Branch `feat/incognito-component`.
   `ECharacterLifeState.ALIVE` (neither unconscious nor dead) and within the shot radius. Reason
   `shot:victim`.
 
+- Run A2 (same log, from 13:05): `shot:victim` at 13:05:46 (victim 12 m, still conscious) and at
+  13:10:18 against a naval infantry reinforcement; voice break at 50 m; re-task at 43 m. Edge case:
+  at 13:07:39 the victim was facing the player (4.1 m), so he counted as an ordinary observer and the
+  shot broke at once, before the bullet landed; a knock-out or kill of the only observer still gave
+  the player away. Fix: the aimed victim is excluded from the immediate witness search and judged only
+  by the delayed victim check. Kill break and the cap still not exercised (groups despawned between
+  breaks). Test layer cap set to 1 so a single group reaches it.
+
 ## Next step
-Run A2 (FIA still far): victim witness, kill break, cap. Run B (FIA near USSR): third-party rules.
+Run A3 (FIA still far): victim facing the player taken out in one shot, kill break, cap.
+Run B (FIA near USSR): third-party rules.
 Delivery (push / PR) is the user's decision.
