@@ -43,7 +43,7 @@ is never wired to any entity, rebuilt on top of our server-authoritative, dedica
       12/09 checks (sprint, aim, proximity, voice).
 - [x] T1 - Suspicion meter: instant-break vs accumulating rules, decay, recovery threshold.
 - [x] T2 - Reinforcements: spawn at distance and bearing, move to break point.
-- [ ] T3 - Reinforcements: timed despawn out of sight, reuse radius, group cap.
+- [x] T3 - Reinforcements: timed despawn out of sight, reuse radius, group cap.
 
 ## TDD
 Strict TDD is enabled globally, but this addon has no Enforce Script test runner. Checks are manual:
@@ -118,5 +118,11 @@ Strategy: ask-on-risk. Branch `feat/incognito-component`.
   first as vanilla does (`SCR_AIGroup.c:2904-2911`), only when no player within 300 m sees any member.
   Dead or deleted groups are pruned after a 10 s spawn grace.
 
+- T3 test (log `logs_2026-09-23_11-56-31`, run from 12:08): three despawns 30.8-30.9 s after
+  `Restored` (despawn time 30 s + one tick). Re-tasking instead of spawning at 12:13:00 (group 136 m
+  away) and 12:14:06 (72.7 m), both `atCap=0`. Hold-while-seen shown indirectly: after the 12:13:31
+  restore the group was still alive at 12:14:06, 35 s later, when the next break re-tasked it.
+  Cap scenario (two groups, then a third break) NOT tested. No addon errors.
+
 ## Next step
-T3: manual test; the agent reads the log.
+Feature complete except the untested cap scenario. Delivery (push / PR) is the user's decision.
