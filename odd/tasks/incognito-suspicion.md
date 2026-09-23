@@ -133,6 +133,11 @@ Strategy: ask-on-risk. Branch `feat/incognito-component`.
   3. Cap branch never exercised.
   4. Shot and kill breaks not observed since `Break` gained suspicion and reinforcements.
 
+- Review warning 2 fixed (pending manual test): `OnDelete` now removes the game-mode and controller
+  subscriptions and the shot hooks, and deletes tracked reinforcements; `DeleteReinforcement` skips
+  entities already being deleted (world shutdown). Warning 1 left as is (inherited design, low risk).
+  Test layer reuse radius lowered to 50 m so the cap can be reached without walking 300 m.
+
 ## Next step
-Decide on the review warnings (2 is a small code fix; 3 and 4 need one manual run). Delivery
-(push / PR) is the user's decision.
+One manual run for warnings 3 and 4 (shot break, kill break, cap) and a clean Play stop for 2.
+Delivery (push / PR) is the user's decision.

@@ -195,6 +195,29 @@ class ARGA_IncognitoComponent : ScriptComponent
 			s_Instance = null;
 
 		GetGame().GetCallqueue().Remove(Tick);
+
+		SCR_BaseGameMode gameMode = SCR_BaseGameMode.Cast(GetGame().GetGameMode());
+		if (gameMode)
+		{
+			gameMode.GetOnPlayerRegistered().Remove(OnPlayerRegistered);
+			gameMode.GetOnPlayerDisconnected().Remove(OnPlayerDisconnected);
+			gameMode.GetOnControllableDestroyed().Remove(OnControllableDestroyed);
+		}
+
+		foreach (int playerId, ARGA_IncognitoState state : m_mStates)
+		{
+			if (state.m_Controller)
+				state.m_Controller.m_OnControlledEntityChanged.Remove(OnControlledEntityChanged);
+
+			UnregisterShotHook(state.m_Entity);
+		}
+
+		m_mStates.Clear();
+
+		foreach (ARGA_IncognitoReinforcement reinforcement : m_aReinforcements)
+			DeleteReinforcement(reinforcement);
+
+		m_aReinforcements.Clear();
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -825,13 +848,14 @@ class ARGA_IncognitoComponent : ScriptComponent
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Same order vanilla uses to despawn a group: members first, then the group.
+	//! Same order vanilla uses to despawn a group: members first, then the group. Skips anything already
+	//! being deleted, which is everything when the world itself is shutting down.
 	protected void DeleteReinforcement(ARGA_IncognitoReinforcement reinforcement)
 	{
-		if (reinforcement.m_Waypoint)
+		if (reinforcement.m_Waypoint && !reinforcement.m_Waypoint.IsDeleted())
 			SCR_EntityHelper.DeleteEntityAndChildren(reinforcement.m_Waypoint);
 
-		if (!reinforcement.m_Group)
+		if (!reinforcement.m_Group || reinforcement.m_Group.IsDeleted())
 			return;
 
 		array<AIAgent> agents = {};
@@ -840,7 +864,7 @@ class ARGA_IncognitoComponent : ScriptComponent
 		foreach (AIAgent agent : agents)
 		{
 			IEntity member = agent.GetControlledEntity();
-			if (member)
+			if (member && !member.IsDeleted())
 				RplComponent.DeleteRplEntity(member, false);
 		}
 
