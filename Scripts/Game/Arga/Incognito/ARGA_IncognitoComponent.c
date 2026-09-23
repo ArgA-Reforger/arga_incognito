@@ -1439,8 +1439,13 @@ class ARGA_IncognitoComponent : ScriptComponent
 		vector playerPos = state.m_Entity.GetOrigin();
 
 		IEntity witness = FindObserverInRange(aiEntities, state.m_Entity, playerPos, m_fWitnessRadius, realFaction, outfitFaction, requireSight: true, exclude: instigatorContextData.GetVictimEntity());
-		if (witness)
-			Break(state, "kill", witness);
+		if (!witness)
+			return;
+
+		if (m_bDebugLog)
+			Print(string.Format("[ARGA_Incognito][Debug] Kill playerId=%1 victim=%2", state.m_iPlayerId, instigatorContextData.GetVictimEntity()), LogLevel.NORMAL);
+
+		Break(state, "kill", witness);
 	}
 
 	//------------------------------------------------------------------------------------------------

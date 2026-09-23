@@ -253,7 +253,16 @@ Strategy: ask-on-risk. Branch `feat/incognito-component`.
   player's real faction (`IsHunter`), like every other witness. Not re-run in play: with the current
   configs every faction is hostile, so the outcome of past runs does not change.
 
+- Dedicated-server run (addon v0.0.9 from the Workshop, log `logs_2026-09-23_18-13-02`, UTC): 57 shots
+  at FIA classified `target=2` with the right soldier each time, so a remote player's weapon aim
+  reaches the server usably (warning 2 closed). Own combat by `engaged by outfit enemy` seen for the
+  first time (18:21:09, 18:24:21); first observed `kill` break (18:21:36, witness THREATENED; victim
+  not logged); `shot:victim` on a USSR at 2.8 m (18:28:03); restores and despawns normal. The break at
+  18:18:41 was a USSR stepping into the player's line of fire (user). User decision: keep shooting a
+  USSR as an instant break in combat too; in an incognito mission the player is expected to break off
+  when the disguise faction and the third party start fighting. Kill breaks now log the victim.
+
 ## Next step
-Dedicated-server run for warning 2; turn off the test-layer debug log;
+Turn off the test-layer debug log; turn off the test-layer debug log;
 delivery (push / PR) is the user's decision.
 Delivery (push / PR) is the user's decision.
