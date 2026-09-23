@@ -175,7 +175,13 @@ Strategy: ask-on-risk. Branch `feat/incognito-component`.
   by the delayed victim check. Kill break and the cap still not exercised (groups despawned between
   breaks). Test layer cap set to 1 so a single group reaches it.
 
+- Run A3 (same log, from 13:18): aiming at a USSR facing the player broke `suspicion:aiming` before
+  any shot (~2 s at close range), so no shot was judged; voice break at 30 m. The user accepts the
+  aiming sensitivity as is. The user also judged the remaining cases not reproducible by hand, since
+  the AI reacts on its own: one-shot take-out of a victim facing the player, the kill break (a shot
+  in front of a witness always breaks first) and the group cap. They stay UNVERIFIED in play; covered
+  only by code reading and the native review.
+
 ## Next step
-Run A3 (FIA still far): victim facing the player taken out in one shot, kill break, cap.
 Run B (FIA near USSR): third-party rules.
 Delivery (push / PR) is the user's decision.
