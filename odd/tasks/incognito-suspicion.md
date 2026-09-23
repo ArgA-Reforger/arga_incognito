@@ -226,6 +226,12 @@ Strategy: ask-on-risk. Branch `feat/incognito-component`.
   at 9.8 m with `threat=3` (THREATENED) who had closed in to fight FIA. Fix: the proximity rule gets
   the same combat exemption as sprinting (own combat, or the observer at VIGILANT or above).
 
+- Combat rule set (user decision, 2026-09-23): in combat (own combat, or the observer at VIGILANT or
+  above) only talking near the outfit's side and shooting or killing someone of that side in front of
+  a witness give the player away. Aiming at the outfit's side no longer adds suspicion in combat
+  (muzzle sweeping); sprinting, stray shots and proximity were already exempt. Out of combat nothing
+  changes.
+
 ## Next step
 Repeat run B.
 Delivery (push / PR) is the user's decision.

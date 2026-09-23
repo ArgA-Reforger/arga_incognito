@@ -47,7 +47,7 @@ class ARGA_IncognitoComponent : ScriptComponent
 	[Attribute("75", UIWidgets.Slider, "Radio en metros: un observador dentro que ve al jugador disparar a su propio bando rompe el disfraz; si el disparo no apunta a nadie, suma sospecha. Disparar a un enemigo de ese bando no cuenta. 0 desactiva este disparador.", params: "0 500 1", category: "Disguise Break")]
 	protected float m_fShotRadius;
 
-	[Attribute("50", UIWidgets.Slider, "Radio en metros: un observador que ve al jugador apuntando o en ADS a alguien de su propio bando suma sospecha. Apuntar a un enemigo de ese bando o a nadie no cuenta. 0 desactiva este disparador.", params: "0 200 1", category: "Disguise Break")]
+	[Attribute("50", UIWidgets.Slider, "Radio en metros: un observador que ve al jugador apuntando o en ADS a alguien de su propio bando suma sospecha. Apuntar a un enemigo de ese bando o a nadie no cuenta, ni apuntar en combate. 0 desactiva este disparador.", params: "0 200 1", category: "Disguise Break")]
 	protected float m_fAimRadius;
 
 	[Attribute("300", UIWidgets.Slider, "Distancia maxima en metros para identificar a quien apunta o dispara el jugador.", params: "10 1000 1", category: "Disguise Break")]
@@ -1577,10 +1577,17 @@ class ARGA_IncognitoComponent : ScriptComponent
 	//! the strongest observer per rule and add up. Returns true when suspicion was raised this tick.
 	protected bool EvaluateBreakRules(ARGA_IncognitoState state, IEntity entity, CharacterControllerComponent controller, SCR_CharacterFactionAffiliationComponent affiliation, array<IEntity> aiEntities)
 	{
+		if (IsEngagedByOutfitEnemy(entity, affiliation.GetPerceivedFaction(), aiEntities))
+			EnterOwnCombat(state, "engaged by outfit enemy");
+
+		// A player trading fire with a common enemy runs, sweeps his muzzle and stands close like
+		// everyone else. Only talking, or shooting the outfit's own side, still gives him away.
+		bool ownCombat = IsInOwnCombat(state);
+
 		// Only aiming at the outfit's own side is suspicious; the cone search runs only with the weapon up.
 		float aimRadius;
 		IEntity aimTarget;
-		if ((controller.IsWeaponRaised() || controller.IsWeaponADS()) && ClassifyAim(entity, aiEntities, affiliation.GetPerceivedFaction(), aimTarget) == TARGET_DISGUISE_SIDE)
+		if (!ownCombat && (controller.IsWeaponRaised() || controller.IsWeaponADS()) && ClassifyAim(entity, aiEntities, affiliation.GetPerceivedFaction(), aimTarget) == TARGET_DISGUISE_SIDE)
 			aimRadius = m_fAimRadius;
 
 		bool sprinting = IsSprinting(controller);
@@ -1588,11 +1595,6 @@ class ARGA_IncognitoComponent : ScriptComponent
 		if (m_bDebugLog)
 			LogSpeed(state, entity, controller, sprinting);
 
-		if (IsEngagedByOutfitEnemy(entity, affiliation.GetPerceivedFaction(), aiEntities))
-			EnterOwnCombat(state, "engaged by outfit enemy");
-
-		// A player trading fire with a common enemy runs like everyone else.
-		bool ownCombat = IsInOwnCombat(state);
 		float sprintRadius;
 		if (sprinting && !ownCombat)
 			sprintRadius = m_fSprintRadius;
@@ -1636,7 +1638,8 @@ class ARGA_IncognitoComponent : ScriptComponent
 			if (!Sees(aiEntity, entity))
 				continue;
 
-			if (aimRadius > 0 && distance <= aimRadius)
+			// A muzzle swept across an ally in a firefight is not a threat to him.
+			if (aimRadius > 0 && distance <= aimRadius && !IsInCombat(aiEntity))
 			{
 				gain = ScaledGain(m_fAimSuspicionRate, distance, aimRadius);
 				aimGain = Math.Max(aimGain, gain);
