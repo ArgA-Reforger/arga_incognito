@@ -136,8 +136,10 @@ A radius of 0 turns its rule off.
 
 ### Notes for mission makers
 
-- **Voice range** is not configured here. It is read from the speaker's active VON component, so a
-  voice mod's ranges apply automatically.
+- **Voice range** is not configured here. It follows the speaker's active VON component: vanilla
+  68 m, and ModularVoiceRange's whisper / normal / loud at 5 / 30 / 68 m. Other voice mods have
+  their range read from the component's sound file, which only works in Workbench and on listen
+  servers, not on a dedicated server.
 - **Disguise prefabs that inherit a vanilla character** also inherit its random variants, and the
   loadout system may spawn the vanilla variant instead. Point the inherited variant at your own prefab
   (see `Prefabs/Characters/Incognito/ARGA_Incognito_Character_USSR_Rifleman.et`).
@@ -297,8 +299,10 @@ Un radio en 0 desactiva su regla.
 
 ### Notas para quien arma la misión
 
-- **El alcance de la voz** no se configura acá. Se lee del componente de voz activo del jugador que
-  habla, así que los alcances de un mod de voz se aplican solos.
+- **El alcance de la voz** no se configura acá. Depende del componente de voz activo del jugador que
+  habla: vanilla 68 m, y susurro / normal / fuerte de ModularVoiceRange a 5 / 30 / 68 m. En otros
+  mods de voz el alcance se lee del archivo de sonido del componente, lo que solo funciona en el
+  Workbench y en servidores locales, no en un servidor dedicado.
 - **Los prefabs de disfraz que heredan de un personaje vanilla** heredan también sus variantes
   aleatorias, y el sistema de loadouts puede hacer aparecer la variante vanilla. Hay que apuntar la
   variante heredada al propio prefab (ver

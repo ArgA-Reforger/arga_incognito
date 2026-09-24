@@ -125,6 +125,15 @@ class ARGA_IncognitoComponent : ScriptComponent
 	//! cos(70 deg): half of the 140 deg peripheral FOV vanilla gives the EyesSensor in Character_Base.et.
 	protected const float MIN_FOV_DOT = 0.342;
 
+	//! Speaking ranges of the known VON classes. Reading them from the .acp works in Workbench but
+	//! returns nothing on a dedicated server, so voice never broke there. Vanilla: von.acp's amplitude
+	//! Amplitude_-40LUFS_to_-35LUFS.conf, outerRange 68. ModularVoiceRange_648297C0F03CE43A: the
+	//! B_VoN* classes are empty SCR_VoNComponent subclasses; their .acp ranges are 5 / 30 / 68.
+	protected const float VANILLA_RANGE_M = 68;
+	protected const float WHISPER_RANGE_M = 5;
+	protected const float NORMAL_RANGE_M = 30;
+	protected const float LOUD_RANGE_M = 68;
+
 	protected const float EYE_HEIGHT = 1.6;
 
 	//! GetMovementSpeed() slides continuously up to 2 as the player wheels from walk to run, and jumps to
@@ -270,7 +279,8 @@ class ARGA_IncognitoComponent : ScriptComponent
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Speaking range read from the mod's own .acp, so it is never configured in two places.
+	//! Known classes use the fixed table; any other voice mod falls back to its own .acp, which only
+	//! resolves where resources load (Workbench, listen server).
 	//! Keyed by class, which stays available when the lookup fails, so failures also cache once.
 	protected float ResolveVoiceRadius(SCR_VoNComponent vonComponent, IEntity entity)
 	{
@@ -281,11 +291,13 @@ class ARGA_IncognitoComponent : ScriptComponent
 			return cached;
 
 		ResourceName acp;
-		float radius = 0;
+		float radius = KnownVoiceRadius(key);
 		string detail;
 
 		BaseContainer source = vonComponent.GetComponentSource(entity);
-		if (!source)
+		if (radius > 0)
+			detail = "tabla fija";
+		else if (!source)
 			detail = "sin component source";
 		else if (!source.Get("Filename", acp))
 			detail = "el componente no tiene Filename";
@@ -301,6 +313,25 @@ class ARGA_IncognitoComponent : ScriptComponent
 			Print(string.Format("[ARGA_Incognito][Debug] Voice range %1 = %2m (%3)", key, radius, detail), LogLevel.NORMAL);
 
 		return radius;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! See VANILLA_RANGE_M. Returns 0 for a class that is not in the table.
+	protected float KnownVoiceRadius(string vonClassName)
+	{
+		if (vonClassName == "SCR_VoNComponent")
+			return VANILLA_RANGE_M;
+
+		if (vonClassName == "B_VoNWhispering")
+			return WHISPER_RANGE_M;
+
+		if (vonClassName == "B_VoNNormal")
+			return NORMAL_RANGE_M;
+
+		if (vonClassName == "B_VoNLoud")
+			return LOUD_RANGE_M;
+
+		return 0;
 	}
 
 	//------------------------------------------------------------------------------------------------
