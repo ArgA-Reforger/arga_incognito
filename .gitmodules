@@ -1,0 +1,3 @@
+[submodule ".agents/reforger-agent-skills"]
+	path = .agents/reforger-agent-skills
+	url = git@github.com:ArgA-Reforger/arga_reforger_agent_skills.git
